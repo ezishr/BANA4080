@@ -1,0 +1,6 @@
+month_01_data <- read_csv("Module 2/student-files-lesson 2a/data/Month-01.csv")
+# install.packages('here')
+library(here)
+here('data','Month-01.csv')
+read_csv(here("data","Month-01.csv"))
+files <- list.files(path=here('Module 2','data'), recursive=TRUE, pattern="Month-01.csv", full.names = TRUE)
