@@ -9,7 +9,7 @@ view(demographics)
 view(campaign_descriptions)
 view(campaigns)
 view(products)
-view(promotions)
+promotions
 
 # Total Sales Distribution --------------------------------------------
 sample <- transactions %>% left_join(products, by="product_id") %>% group_by(week, department) %>% summarise(total_sales = sum(sales_value))
@@ -27,7 +27,7 @@ totalSalesDistribution <- ggplot(sample2, aes(x=week, y=department, fill=total_s
   labs(title="Total Sales of Top 5 Over Weeks", subtitle ="The total sales of top 5 departments per week are extracted to visualize the distribution", x="Week", y="Department") +
   theme_minimal()
 
-# Redemptions vs. Household Size --------------------------------------------------------
+# Redemption vs. Household Size --------------------------------------------------------
 coupon_redemptions <- coupon_redemptions %>% mutate(dayOfWeek = wday(redemption_date, label=TRUE))
 sample <- coupon_redemptions %>% 
   inner_join(demographics, by="household_id") %>% 
@@ -35,7 +35,7 @@ sample <- coupon_redemptions %>%
   mutate(dayOfWeek=wday(redemption_date))
 sample2 <- sample %>% group_by(dayOfWeek, household_size) %>% count()
 
-custom_colors <- c('1'='blue','2'='red','3'='orange','4'='purple','5+'='darkgreen,'highlight'='red)
+custom_colors <- c('1'='blue','2'='red','3'='orange','4'='purple','5+'='darkgreen')
 
 redemption_householdSize <- ggplot(sample2) +
   geom_line(data = subset(sample2, household_size == '2'), aes(x=dayOfWeek, y=n, colour = '2'), linewidth = 1.5, linetype='dotted') +
@@ -47,5 +47,57 @@ redemption_householdSize <- ggplot(sample2) +
        y = 'Count of Redemptions',
        color="Household Size") +
   theme_minimal() 
+
+# Product Placement vs. Direct Marketing -------------------------------------------------
+sample1 <- promotions %>% select(product_id, display_location, mailer_location, week) %>%
+  right_join(coupons, by='product_id', relationship = 'many-to-many') %>%
+  drop_na(display_location)
+
+# Count of coupons issued
+sample2 <- sample1 %>% group_by(product_id, display_location, campaign_id) %>% 
+  summarise(count_coupon = n(), .groups='drop') %>% 
+  arrange(desc(count_coupon))
+
+# Count of redemption
+sample3 <- sample2 %>% inner_join(coupon_redemptions,by='campaign_id', relationship = 'many-to-many') %>%
+  group_by(product_id, display_location, campaign_id) %>%
+  summarise(count_redemptions = n())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
