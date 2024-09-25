@@ -4,4 +4,4 @@ library(here)
 library(completejourney)
 #install.packages("completejourney")
 
-c(promotions, transactions) %<-% get_data()
+c(promotions, transactions) %<-% get_data(which = 'both', verbose = FALSE)
