@@ -5,3 +5,4 @@ library(completejourney)
 #install.packages("completejourney")
 
 c(promotions, transactions) %<-% get_data()
+promotions
