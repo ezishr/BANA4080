@@ -12,7 +12,7 @@ view(products)
 promotions
 
 # Total Sales Distribution --------------------------------------------
-sample <- transactions %>% left_join(products, by="product_id") %>% group_by(week, department) %>% summarise(total_sales = sum(sales_value))
+sample <- transactions %>% left_join(products, by="product_id") %>% group_by(week, department) %>% summarise(total_sales = sum(sales_value), .groups = 'drop')
 sample <- sample %>% dplyr::filter(!is.na(department))
 sample2 <- sample %>% group_by(week) %>% arrange(desc(total_sales)) %>%
   mutate(rank=row_number()) %>%
@@ -43,6 +43,7 @@ redemption_householdSize <- ggplot(sample2) +
   scale_x_continuous(breaks=c(1,2,3,4,5,6,7), labels = c('Sunday','Monday', 'Tuesday','Wednesday','Thursday','Friday','Saturday')) +
   scale_color_manual(values=custom_colors) +
   labs(title = "Distribution of Redemptions Over Weeks based off Household Size",
+       subtitle = 'Household size of 2 has the highest redemptions mostly throughout the week',
        x = 'Day of Week',
        y = 'Count of Redemptions',
        color="Household Size") +
@@ -59,16 +60,34 @@ sample2 <- sample1 %>% group_by(product_id, display_location, campaign_id) %>%
   arrange(desc(count_coupon))
 
 # Count of redemption
-sample3 <- sample2 %>% inner_join(coupon_redemptions,by='campaign_id', relationship = 'many-to-many') %>%
+sample3 <- sample2 %>% 
+  inner_join(coupon_redemptions,by='campaign_id', relationship = 'many-to-many') %>%
   group_by(product_id, display_location, campaign_id) %>%
   summarise(count_redemptions = n())
 
 
+# Drop the no-display in display_location and mailer_location
+promotions_1 <- promotions %>% dplyr::filter(display_location != 0, mailer_location!=0)
+transactions_1 <- transactions %>% 
+  group_by(product_id, store_id) %>% 
+  summarise(total_sales = sum(sales_value), .groups = 'drop')
+sub_data <- promotions_1 %>% 
+  inner_join(transactions_1, by=c('product_id', 'store_id')) %>% 
+  group_by(display_location, mailer_location) %>% summarise(
+  promotion_count = n(),
+  sales_impact = sum(total_sales),
+  .groups = 'drop'
+)
 
-
-
-
-
+promotion_by_location <- ggplot(sub_data, aes(x = display_location, y = mailer_location, size = promotion_count, color = sales_impact)) +
+  geom_point(alpha = 0.6) +
+  scale_size(range = c(3, 20), name='Promotion Count') +
+  scale_color_gradientn(colors = c('lightblue','purple','darkblue'), name='Sales Impact') +
+  scale_x_discrete(labels=c('1'='Store Front', '2'='Store Rear', '3'='Front end cap', '4'='Mid-aisle end cap', '5'='Rear end cap', '6'='Side aisle end cap', '7'='In-aisle', '9'='Secondary location display', 'A'='In-shelf')) +
+  scale_y_discrete(labels=c('A'='Interior page feature', 'C'='Interior page line item', 'D'='Front page feature', 'F'='Back page feature', 'H'='Wrap front feature', 'J'='Wrap interior coupon', 'L'='Wrap back feature', 'P'='Interior page coupon', 'X'='Free on interior page', 'Z'='Free on front page, back page, or wrap')) +
+  labs(title = "Bubble Map of Promotions by Display Location and Sales Impact",
+       x = "Display Locations", y = "Mailer Locations") +
+  theme_minimal()
 
 
 
