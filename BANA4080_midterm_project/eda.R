@@ -117,4 +117,3 @@ write_csv(transWithRedemptions_groupedByProductId_mailerLocationIs0, 'Transactio
 
 
 
-
