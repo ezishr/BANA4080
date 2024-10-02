@@ -132,12 +132,12 @@ test it out for when month equals 6, 10, & 13
 
 ```{r slide-17}
 month <- 4
-if(month _____) {
+if(month %in% 1:9) {
   paste0("data/", "Month-0", month, ".csv")
-} else if(month _____) {
+} else if(month %in% 10:12) {
   paste0("data/", "Month-", month, ".csv")
 } else {
-  print("_____")
+  print("Invalid Month")
 }
 ```
 
@@ -180,13 +180,19 @@ Re-write the below code using a vectorized approach. Test the results with `mont
 
 ```{r slide-22}
 month <- 1:13
-if(month %in% 1:9) {
-  paste0("data/", "Month-0", month, ".csv")
-} else if(month %in% 10:12) {
-  paste0("data/", "Month-", month, ".csv")
-} else {
-  print("Invalid month")
-}
+#if(month %in% 1:9) {
+#  paste0("data/", "Month-0", month, ".csv")
+#} else if(month %in% 10:12) {
+#  paste0("data/", "Month-", month, ".csv")
+#} else {
+#  print("Invalid month")
+#}
+
+dplyr::case_when(
+  month %in% 1:9 ~ paste0("data/", "Month-0", month, ".csv"),
+  month %in% 10:12 ~ paste0("data/", "Month-", month, ".csv"),
+  TRUE ~ print("Invalid month")
+)
 ```
 
 
@@ -228,14 +234,15 @@ _Hint: use `quantile(x, perc_value)`_
 
 ```{r slide-23}
 # fill in the blanks
+library(nycflights13)
 nycflights13::flights %>%
-  filter(arr_delay > 0) %>%
+  dplyr::filter(arr_delay > 0) %>%
   select(carrier, tailnum, arr_delay) %>%
   mutate(severity = case_when(
-    ______ ~ 1,
-    ______ ~ 2,
-    ______ ~ 3,
-    ______ ~ 4
+    arr_delay < quantile(arr_delay, .25) ~ 1,
+    arr_delay < quantile(arr_delay, .5) ~ 2,
+    arr_delay < quantile(arr_delay, .75) ~ 3,
+    TRUE ~ 4
   ))
 ```
 
