@@ -4,13 +4,7 @@ library(here)
 library(completejourney)
 library(readr)
 c(promotions, transactions) %<-% get_data(which = 'both', verbose = FALSE)
-view(transactions)
-view(campaigns)
-view(coupon_redemptions)
-view(coupons)
-view(products)
-view(campaign_descriptions)
-view(demographics)
+setwd('/Users/ezishr/Documents/CINCY/Fall 2024/BANA 4080/BANA4080_midterm_project')
 
 transactions <- transactions %>% mutate(date = as.Date(transaction_timestamp))
 
@@ -28,19 +22,23 @@ redemptions <- coupons %>%
 
 # Every transaction with redemptions
 sample_df <- redemptions %>%
-  left_join(trans1, by = c('household_id','date','product_id'), relationship = 'many-to-many')
+  left_join(trans1, by = c('household_id','product_id','date'), relationship = 'many-to-many')
+
 colSums(is.na(sample_df)) # there are roughly 2M coupons redemptions w/o transaction records
 
 transWithRedemptions <- redemptions %>%
-  inner_join(trans1, by = c('household_id','date','product_id'), relationship = 'many-to-many')
-write_csv(transWithRedemptions, 'Transactions_With_Redemptions.csv')
+  inner_join(trans1, by = c('household_id','product_id','date'), relationship = 'many-to-many') %>%
+  select('coupon_upc', 'product_id', 'store_id', 'campaign_id', "campaign_type", 'start_date', 'end_date', 'household_id', 'date', 'sales_value', 'retail_disc') %>%
+  arrange(desc(product_id))
+
+write_csv(transWithRedemptions, 'Final_Transactions_With_Redemptions.csv')
 
 
 
 
 
 
-#OLD CODE - NO INCLUDING THESE-----
+# OLD CODE - NO INCLUDING THESE-----
 # 1. Join coupon_redemptions & campaign_descriptions => have the start and end date of the campaign. 
 coupon_redemp_description <- coupon_redemptions %>%
   full_join(campaign_descriptions, by = 'campaign_id') %>%
@@ -71,95 +69,80 @@ promotions1 <- promotions %>% dplyr::filter(display_location != 0 | mailer_locat
 # Total sales from transactions with redemption, grouped by product_id and store_id
 transWithRedemptions_groupedByProductStoreId <- transWithRedemptions %>%
   group_by(product_id, store_id) %>%
-  summarise(total_sales = sum(sales_value), .groups = 'drop') %>%
-  arrange(desc(total_sales))
+  summarise(total_sales = sum(sales_value))
+
+transWithRedemptions_grouped <- transWithRedemptions_groupedByProductStoreId
+#### Check if there is duplicate comb of product_id and store_id in every row
+duplicates <- transWithRedemptions_grouped %>%
+  dplyr::group_by(product_id, store_id) %>%
+  dplyr::summarize(count = n()) %>%
+  dplyr::filter(count > 1)
+print(duplicates)
+
 
 # Get unique existing product id and store id from the above
 product_info_id <- unique(transWithRedemptions_groupedByProductStoreId$product_id)
 store_info_id <- unique(transWithRedemptions_groupedByProductStoreId$store_id)
 
 # Get rid of location 0 (not display) for display_location
-promotions_displayNot0 <- promotions %>% 
-  dplyr::filter(display_location != 0) %>% 
-  select(-mailer_location)
+promos_display <- promotions %>% 
+  select(-(mailer_location:week)) %>% 
+  dplyr::distinct(product_id, store_id, display_location, .keep_all = TRUE) %>%
+  dplyr::filter(display_location != 0)
 
 # Join display location to transactions with redemptions by keys product_id and store_id
-transWithRedemptions_groupedByProductId_displayLocation <- promotions_displayNot0 %>% 
-  dplyr::filter((product_id %in% product_info_id) & (store_id %in% store_info_id)) %>% 
-  inner_join(transWithRedemptions_groupedByProductStoreId, by=c('product_id', 'store_id'), relationship = 'many-to-many') %>%
-  select(-week) %>%
-  drop_na(total_sales) %>% ##
+transWithRedemptions_displayLocation <- transWithRedemptions_groupedByProductStoreId %>%
+  inner_join(promos_display, by=c('product_id', 'store_id')) %>%
   left_join(products, by='product_id') %>%
-  select(-c('manufacturer_id', 'brand','package_size')) %>%
-  drop_na(display_location)
-
+  select(-c('manufacturer_id', 'brand','package_size'))
 
 # Get rid of location 0 for mailer_location
-promotions_mailerNot0 <- promotions %>% 
-  dplyr::filter(mailer_location != 0) %>%
-  select(-display_location)
+promos_mailer <- promotions %>% 
+  select(-c(display_location, week)) %>% 
+  dplyr::distinct(product_id, store_id, mailer_location, .keep_all = TRUE) %>%
+  dplyr::filter(mailer_location != 0)
 
 # Join mailer location to transactions with redemptions by keys product_id and store_id
-transWithRedemptions_groupedByProductId_displayLocation <- promotions_mailerNot0 %>% 
-  dplyr::filter((product_id %in% product_info_id) & (store_id %in% store_info_id)) %>% 
-  inner_join(transWithRedemptions_groupedByProductStoreId, by=c('product_id', 'store_id'), relationship = 'many-to-many') %>%
-  select(-week) %>%
-  drop_na(total_sales) %>% ##
+transWithRedemptions_mailerLocation <- promos_mailer %>%
+  inner_join(transWithRedemptions_groupedByProductStoreId, by=c('product_id', 'store_id')) %>%
   left_join(products, by='product_id') %>%
-  select(-c('manufacturer_id', 'brand','package_size')) %>%
-  drop_na(mailer_location)
+  select(-c('manufacturer_id', 'brand','package_size'))
 
 # Export as csv files
-getwd()
-setwd("/Users/ezishr/Documents/CINCY/Fall 2024/BANA 4080/BANA4080_midterm_project")
-write_csv(transWithRedemptions_groupedByProductId_mailerLocation, "Transactions_W_Redemptions_Mailer_Location.csv")
-write_csv(transWithRedemptions_groupedByProductId_displayLocation, "Transactions_W_Redemptions_Display_Location.csv")
+write_csv(transWithRedemptions_mailerLocation, "Transactions_W_Redemptions_Mailer_Location.csv")
+write_csv(transWithRedemptions_displayLocation, "Transactions_W_Redemptions_Display_Location.csv")
 
 
-## d. Customer doesn’t use the coupons if products are not shown in mail (mailer_location) ----
+# d. Customer doesn’t use the coupons if products are not shown in mail (mailer_location) ----
 # Promotions with display_location = 0, which is not displayed
-promotions_displayIs0 <- promotions %>% 
-  dplyr::filter(display_location == 0) %>% 
-  select(-mailer_location)
-
+promos_display0 <- promotions %>% 
+  select(-c(mailer_location, week)) %>% 
+  dplyr::filter(display_location == 0) %>%
+  dplyr::distinct(product_id, store_id, .keep_all = TRUE)
+  
 # Join display location = 0 to transactions with redemptions by keys product_id and store_id
-transWithRedemptions_groupedByProductId_displayLocationIs0 <- promotions_displayIs0 %>% 
-  dplyr::filter(product_id %in% product_info_id & store_id %in% store_info_id) %>% 
-  left_join(transWithRedemptions_groupedByProductStoreId, by=c('product_id', 'store_id'), relationship = 'many-to-many') %>%
-  select(-week) %>%
-  drop_na(total_sales) %>%
-  left_join(products, by='product_id') %>%
-  select(-c('manufacturer_id', 'brand','package_size')) %>%
-  drop_na(display_location)
-  dplyr::filter(product_id %in% product_info_id) %>% 
-  left_join(transWithRedemptions_groupedByProductId, by='product_id', relationship = 'many-to-many') %>%
-  select(-week) %>%
+transWithRedemptions_displayLocationIs0 <- transWithRedemptions_grouped %>%
+  semi_join(promos_display0, by = c("product_id", "store_id")) %>%
   left_join(products, by='product_id') %>%
   select(-c('manufacturer_id', 'brand','package_size'))
 
 # Promotions with mailer_location = 0, which is not displayed
-promotions_mailerIs0 <- promotions %>% 
-  dplyr::filter(mailer_location == 0) %>% 
-  select(-display_location)
+promos_mailer0 <- promotions %>% 
+  select(-c(display_location, week)) %>% 
+  dplyr::filter(mailer_location == 0) %>%
+  dplyr::distinct(product_id, store_id, .keep_all = TRUE)
+
 
 # Join mailer location to transactions with redemptions by keys product_id and store_id
-transWithRedemptions_groupedByProductId_mailerLocationIs0 <- promotions_mailerIs0 %>% 
-  dplyr::filter(product_id %in% product_info_id & store_id %in% store_info_id) %>% 
-  left_join(transWithRedemptions_groupedByProductStoreId, by=c('product_id', 'store_id'), relationship = 'many-to-many') %>%
-  select(-week) %>%
-  drop_na(total_sales) %>%
-  left_join(products, by='product_id') %>%
-  select(-c('manufacturer_id', 'brand','package_size')) %>%
-  drop_na(mailer_location)
-  dplyr::filter(product_id %in% product_info_id) %>% 
-  left_join(transWithRedemptions_groupedByProductId, by='product_id', relationship = 'many-to-many') %>%
-  select(-week) %>%
+transWithRedemptions_mailerLocationIs0 <- transWithRedemptions_grouped %>%
+  semi_join(promos_mailer0, by = c("product_id", "store_id")) %>%
   left_join(products, by='product_id') %>%
   select(-c('manufacturer_id', 'brand','package_size'))
+ 
 
 # Export as csv files
-write_csv(transWithRedemptions_groupedByProductId_displayLocationIs0, 'Transactions_W_Redemptions_Not_Displayed.csv')
-write_csv(transWithRedemptions_groupedByProductId_mailerLocationIs0, 'Transactions_W_Redemptions_Not_Mailed.csv')
+write_csv(transWithRedemptions_displayLocationIs0, 'Transactions_W_Redemptions_Not_Displayed.csv')
+write_csv(transWithRedemptions_mailerLocationIs0, 'Transactions_W_Redemptions_Not_Mailed.csv')
 
 
 

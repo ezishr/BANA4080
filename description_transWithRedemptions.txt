@@ -1,1 +1,0 @@
-This dataset contains every transaction using coupon redemption
