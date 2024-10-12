@@ -1,0 +1,127 @@
+---
+title: "Week 5 - Lab - Eirlys Vo"
+output:
+  html_document:
+    df_print: paged
+---
+
+## 1. Setup
+
+```{r}
+library(tidyverse)
+library(completejourney)
+library(scales)
+c(promotions, transactions) %<-% get_data(which = 'both', verbose = FALSE)
+```
+
+## 2. Total Sales Distribution
+
+```{r, fig.width=10, fig.height=5}
+top_5_category_sales <- transactions %>% left_join(products, by="product_id") %>% 
+  group_by(product_category) %>% 
+  summarise(sales_by_cgry = sum(sales_value), .groups = 'drop') %>%
+  arrange(desc(sales_by_cgry)) %>%
+  mutate(rank = row_number()) %>%
+  dplyr::filter(rank <= 5) %>%
+  pull(product_category)
+
+main_df <- transactions %>% left_join(products, by='product_id') %>%
+  group_by(product_category, week) %>%
+  summarise(sales_by_cgry_week = sum(sales_value), .groups = 'drop') %>%
+  dplyr::filter(product_category %in% top_5_category_sales)
+
+ggplot(main_df, aes(x=week, y=product_category, fill=sales_by_cgry_week)) + 
+  geom_raster() +
+  scale_fill_gradientn(colors=c('lightblue','blue'), name = "Total Sales") +
+  scale_x_continuous(breaks=seq(0,53, by=3)) +
+  labs(title="Total Sales of Top 5 Product Categories Over Weeks", 
+       subtitle ="The total sales of top 5 categories in the year breaking down in weeks", 
+       x="Week", 
+       y="Product Category") +
+  theme_minimal()
+```
+
+## 3. Redemption vs. Household Size
+```{r, fig.width=10, fig.height=5}
+coupon_redemptions <- coupon_redemptions %>% mutate(dayOfWeek = wday(redemption_date, label=TRUE))
+
+redemp_demo_join <- coupon_redemptions %>% 
+  inner_join(demographics, by="household_id") %>% 
+  select(household_id, campaign_id, redemption_date, household_size, age, income) %>%
+  mutate(dayOfWeek=wday(redemption_date))
+
+main_data <- redemp_demo_join %>% group_by(dayOfWeek, household_size) %>% count()
+
+custom_colors <- c('1'='blue','2'='red','3'='orange','4'='purple','5+'='darkgreen')
+
+ggplot(main_data) +
+  geom_line(data = subset(main_data, household_size == '2'), 
+            aes(x=dayOfWeek, y=n, colour = '2'), 
+            linewidth = 1.5, 
+            linetype='dotted') +
+  geom_line(data = subset(main_data, household_size != '2'), 
+            aes(x=dayOfWeek, y=n, color = household_size)) + 
+  scale_x_continuous(breaks=c(1,2,3,4,5,6,7), 
+                     labels = c('Sunday','Monday', 'Tuesday','Wednesday','Thursday','Friday','Saturday')) +
+  scale_color_manual(values=custom_colors) +
+  labs(title = "Distribution of Redemptions Over Weeks based off Household Size",
+       subtitle = 'Household size of 2 has the highest redemptions mostly throughout the week',
+       x = 'Day of Week',
+       y = 'Count of Redemptions',
+       color="Household Size") +
+  theme_minimal() 
+```
+
+## 4. Promotion by Display and Mailer Locations
+```{r, fig.width=20, fig.height=5}
+promotions_modif <- promotions %>% dplyr::filter(display_location != 0, mailer_location!=0)
+
+transactions_modif <- transactions %>% 
+  group_by(product_id, store_id) %>% 
+  summarise(total_sales = sum(sales_value), .groups = 'drop')
+
+main_data <- promotions_modif %>% 
+  inner_join(transactions_modif, by=c('product_id', 'store_id')) %>% 
+  group_by(display_location, mailer_location) %>% 
+  summarise(avg_sales_per_promo = sum(total_sales)/n(),
+            .groups = 'drop') %>%
+  dplyr::filter(avg_sales_per_promo > 0)
+
+ggplot(main_data, aes(x = display_location, y = mailer_location, size = avg_sales_per_promo)) +
+  geom_point(alpha = 0.6, color='blue') +
+  scale_size(range = c(2, 15), name='Average Sales Per Promotion') +
+  scale_x_discrete(labels=c(
+    '1'='Store Front', 
+    '2'='Store Rear', 
+    '3'='Front end cap', 
+    '4'='Mid-aisle end cap', 
+    '5'='Rear end cap', 
+    '6'='Side aisle end cap', 
+    '7'='In-aisle', 
+    '9'='Secondary Location', 
+    'A'='In-shelf')) +
+  scale_y_discrete(labels=c(
+    'A'='Interior page feature', 
+    'C'='Interior page line item', 
+    'D'='Front page feature', 
+    'F'='Back page feature', 
+    'H'='Wrap front feature', 
+    'J'='Wrap interior coupon', 
+    'L'='Wrap back feature', 
+    'P'='Interior page coupon', 
+    'X'='Free on interior page', 
+    'Z'='Free on front page, back page, or wrap')) +
+  labs(title = 'Bubble Map of Average Sales per Promotion by Display and Mailer Locations',
+       x = "Display Locations", 
+       y = "Mailer Locations") +
+  theme_minimal()
+```
+
+## 5. Citations and Credits
+This report is part of a series of class Labs completed for the BANA 4080 course at the University of Cincinnati, under the supervision of Brad Boehmke. 
+
+- Data Source: [The Complete Journey User Guide](https://bradleyboehmke.github.io/completejourney/articles/completejourney.html)
+- Owner: Eirlys Vo
+- Contact methods:
+  + Phone: (513)-512-3660
+  + E-mail: voquyphiqn2004@gmail.com
