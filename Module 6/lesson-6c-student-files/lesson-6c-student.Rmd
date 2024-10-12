@@ -70,8 +70,8 @@ compute_pv(fv = 2000, r = .08, n = 5)
 - Call `ratio()` with arguments 3 and 4
 
 ```{r slide-14}
-ratio <- function(___, ___) {
-  _______
+ratio <- function(x, y) {
+  x/y
 }
 ```
 
@@ -266,7 +266,26 @@ compute_pv(1000, .26, 10, quiet = TRUE)
 Let's go back to our `rescale()` function:
 
 ```{r slide-32a}
-rescale <- function(x, digits = 2){
+rescale <- function(x, digits = 2, na.rm = TRUE, quiet = FALSE){
+  if(!is.atomic(x) | !is.numeric(x)) {
+    stop("Your `x` must be numeric", .call = FALSE)
+  }
+  
+  missing_val = sum(is.na(x))
+  
+  if(!na.rm) {
+    warning(paste("There are",
+                  missing_val,
+                  "NA values in your x with na.rm = TRUE",
+                  .call = FALSE))
+  }
+  
+  if(na.rm) {
+    if(!quiet) {
+      message(paste(missing_val, "NAs were removed"))
+    }
+  }
+  
   rng <- range(x, na.rm = TRUE)
   scaled <- (x - rng[1]) / (rng[2] - rng[1])
   round(scaled, digits = digits)
@@ -292,7 +311,8 @@ Two main ways to distribute your functions:
    
 ```{r slide-35}
 # you may need to adjust this path
-fx_path <- here("my-functions", "custom-stat-functions.R")
+path <- here("Module 6/lesson-6c-student-files")
+fx_path <- here(path, "my-functions", "custom-stat-functions.R")
 source(fx_path)
 ls()
 

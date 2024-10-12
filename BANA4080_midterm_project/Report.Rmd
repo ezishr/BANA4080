@@ -3,13 +3,86 @@ title: "Report"
 output: html_notebook
 ---
 
-# 1. 
+## 1. Setup
 
 ```{r}
 library(tidyverse)
 library(here)
+library(lubridate)
+library(ggplot2)
 library(readr)
+path <- here('BANA4080_midterm_project', 'main_data')
 ```
 
-# 2.
+## 2. Load datasets
+```{r}
+full_transactions <- read_csv(here(path, "Final_Transactions_With_Redemptions.csv"))
+trans_w_display <- read_csv(here(path, "Transactions_W_Redemptions_Display_Location.csv"))
+trans_w_mailer <- read_csv(here(path, "Transactions_W_Redemptions_Mailer_Location.csv"))
+trans_w_display0 <- read_csv(here(path, "Transactions_W_Redemptions_Not_Displayed.csv"))
+trans_w_mailer0 <- read_csv(here(path, "Transactions_W_Redemptions_Not_Mailed.csv"))
+```
+
+## 3. Hypothesis: Different coupon types affect sales differently
+- Assuming 'campaign_type' contains different coupon types
+```{r, fig.width=10, fig.height=12}
+summary_transactions <- full_transactions %>%
+  group_by(campaign_type) %>%
+  summarise(
+    total_sales = sum(sales_value),
+    count_type = n()
+)
+
+ggplot(data = summary_transactions, aes(x = campaign_type)) + 
+  geom_col(aes(y = count_type, fill = 'Count of campaign type'), width = 0.5) +
+  geom_line(aes(y = total_sales, color = 'Total Sales'), group = 1) +
+  geom_point(aes(y = total_sales, color = 'Total Sales'), size = 3.0) + 
+  scale_y_continuous(
+    name = "Count of campaign type",
+    breaks = seq(0, max(summary_transactions$total_sales) + 1, by = 400),
+    sec.axis = sec_axis(~., 
+                        name = "Total Sales",
+                        breaks = seq(0, max(summary_transactions$total_sales) + 1, by = 400))
+  ) +
+  labs(x = 'Campaign Type', title = "Summary") + 
+  scale_fill_manual(name = '', values = c("Count of campaign type" = "lightblue")) +
+  scale_color_manual(name = '', values = c("Total Sales" = 'red')) + 
+  theme_minimal() + 
+  theme(legend.position = 'bottom')
+```
+## 4. Customer is likely to buy stuff at store-front even without coupons
+- Draft
+```{r, fig.width=10, fig.height=10}
+sample <- full_transactions %>%
+  mutate(month_year = format(date, "%Y-%m")) %>%
+  group_by(month_year) %>% 
+  summarise(total = sum(sales_value))
+
+ggplot(data = sample, aes(x = month_year, y = total)) +
+  geom_line(group = 1) + 
+  geom_point()
+```
+
+- Draft 2:
+```{r}
+sample <- trans_w_display %>%
+  group_by(display_location, department) %>%
+  summarize(total = sum(total_sales), .groups = 'drop') %>%
+  group_by(department) %>%  # Corrected the typo here
+  dplyr::filter(n() > 1) %>% 
+  ungroup()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 

@@ -32,6 +32,25 @@ for (i in seq_along(x)) {
   print(paste("The year is", x[i]))
 }
 ```
+```{r}
+means <- seq(0, 100, by = 1)
+
+# Growing the output
+out <- list()
+system.time({
+  for (i in seq_along(means)) {
+    gen_data <- rnorm(10000, means[[i]])
+    out <- c(out, gen_data) # 	•	If out already contains some values, this line will append the contents of gen_data to out.
+  }
+})
+
+out <- vector("list", length(means)) #vector() is a function used to create a vector of a specified type and length.
+system.time({
+  for (i in seq_along(means)) {
+    out[[i]] <- rnorm(10000, means[[i]])
+  }
+})
+```
 
 ## Your Turn!
 
@@ -39,17 +58,18 @@ We can see all data sets that we have in the "data" folder with `list.files()`
 
 ```{r slide-9a}
 library(here)
-list.files(here("data"), pattern = "Month")
+path <- here("Module 6/")
+list.files(here(path, "data"), pattern = "Month")
 ```
 
 Say we wanted to import one of these files into R with the following steps
 
 ```{r slide-9b}
 # here's a single file
-(first_df <- list.files(here("data"), pattern = "Month")[1])
+(first_df <- list.files(here(path, "data"), pattern = "Month")[1])
 
 # create path and import this single file
-df <- readr::read_csv(here("data", first_df))
+df <- readr::read_csv(here(path, "data", first_df))
 
 # create a new name for file
 (new_name <- stringr::str_sub(first_df, end = -5))
@@ -63,15 +83,17 @@ files?
 
 ```{r slide-9c}
 # fill in these gaps
-for(i in _____) {
+for(i in list.files(here(path, "data"), pattern="Month-")) {
   # 1: import data
-  df <- readr::read_csv(_____)
+  df <- readr::read_csv(here(path,"data",i))
   
   # 2: remove ".csv" of name
-  new_name <- _____
+  new_name <- stringr::str_sub(i, end = -5)
   
   # 3: dynamically rename file
-  assign(_____, _____)
+  assign(new_name, df)
+  
+  rm(df)
 }
 ```
 
@@ -224,14 +246,14 @@ value <- 0
 step <- 0
 repeat {
   # randomly add or subtract 1
-  
+  add <- sample(c(-1,1),1)
+  value <- value + add
   # count step
-  
+  step <- step + 1
   # break once our walk exceeds 100
-  if(some_condition) {
+  if(value == 100 | value > 10000) {
     print(step)
     break
   }
 }
 ```
-
