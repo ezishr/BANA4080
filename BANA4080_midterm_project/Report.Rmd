@@ -7,39 +7,40 @@ output:
     toc: true
     toc_depth: 2
 ---
-# Report {.tabset}
+# Group 6 - Midterm Project {.tabset}
 
 ## Introduction
 
-The business problem we're addressing focuses on how different types of coupon campaigns affect sales across various product departments and display locations at Regork. Understanding which coupon types lead to higher sales is crucial for optimizing promotions, improving customer engagement, and boosting revenue.
+The business problem we addressed is how different types of promotion campaigns affect sales value across various product departments and display/mailer locations at Regork. Understanding which campaign types and locations leading to higher sales value is crucial for optimizing promotion strategies, improving customer engagement, and boosting revenue.
 
-We utilized sales transaction data, focusing on coupon types and their redemption rates, campaign display locations, and total sales across different departments. The methodology included analyzing sales distributions across these variables to identify patterns in consumer purchases.
+We utilized sales transaction data, focusing on coupon types and their redemption rates, campaign display locations, and total sales across different departments. The methodology included analyzing sales value distributions across these variables to identify patterns in consumer purchases.
 
-This analysis offers actionable insights, such as which coupon types drive the most sales and which display locations are most effective. This can help Regork stakeholders make data-driven decisions on future promotions, improve resource allocation, and enhance overall sales strategies, especially by focusing on high-performing areas like grocery or drugstore departments.
+This analysis offers actionable insights, such as which campaign types drive the most sales and which locations are most effective. This can help Regork stakeholders make data-driven decisions on future promotions, improve resource allocation, and enhance overall sales strategies, especially by focusing on high-performing areas like grocery or drugstore departments.
 
 ## Packages Required
 ```{r}
-library(tidyverse)
-library(here)
-library(lubridate)
-library(ggplot2)
-library(readr)
+library(tidyverse)               # collection of R packages for data manipulation and visualization
+library(here)                    # simplifies file path management in projects
+library(lubridate)               # tools for working with date and time data
+library(ggplot2)                 # data visualization using "Grammar of Graphics"
+library(readr)                   # fast reading and writing of data files
+library(scales)                  # provides functions for scaling and formatting
 library(completejourney)
-library(readr)
 ```
 ## Data Preparation {.tabset}
 
 ### Setup
 ```{r}
 c(promotions, transactions) %<-% get_data(which = 'both', verbose = FALSE)
-# setwd('/Users/ezishr/Documents/CINCY/Fall 2024/BANA 4080/BANA4080_midterm_project')
 
+# Extract the date for transactions and change data type for product_id
 transactions <- transactions %>% mutate(date = as.Date(transaction_timestamp))
 transactions$product_id <- as.double(transactions$product_id)
 promotions$product_id <- as.double(promotions$product_id)
 products$product_id <- as.double(products$product_id)
 coupons$product_id <- as.double(coupons$product_id)
 
+# Vectors of display and mailer locations to actual names
 display_location_labels <- c("0"="No display", 
                              "1"="Store front", 
                              "2"="Store rear", 
@@ -65,25 +66,30 @@ mailer_location_labels <- c("0"="Not on ad",
 
 ```
 
-### With Redemption
+### Data Transformation
 Assumption: transactions with any discount are redeemed coupons
 ```{r}
+# Select only relevant columns in transactions
 trans1 <- transactions %>% 
   dplyr::filter(retail_disc>0 | coupon_disc>0 | coupon_match_disc>0) %>%
-  select(household_id, store_id, product_id, sales_value:coupon_match_disc, week, date) 
+  select(household_id, store_id, product_id, sales_value:coupon_match_disc, week, date)
 
-# Join coupons, coupon_redemptions, campaign_description to get full info of coupons
+# Join coupons, coupon_redemptions, campaign_description to get full information of coupons
 redemptions <- coupons %>%
   inner_join(campaign_descriptions) %>%
   inner_join(coupon_redemptions, relationship = 'many-to-many') %>%
   rename(date = redemption_date)
 
-# Every transaction with redemption
+# Get every transaction with redemption
 sample_df <- redemptions %>%
   left_join(trans1, by = c('household_id','product_id','date'), relationship = 'many-to-many')
 
-colSums(is.na(sample_df)) # there are roughly 2M coupons redemption w/o transaction records
+colSums(is.na(sample_df))
+```
+Note: There are roughly 2M coupons redemption without transaction records. We got rid of those transactions in further EDA.
 
+```{r}
+# Combine necessary information for transactions having coupon redeemed
 transWithRedemptions <- redemptions %>%
   inner_join(trans1, by = c('household_id','product_id','date'), relationship = 'many-to-many') %>%
   arrange(desc(product_id))
@@ -93,21 +99,25 @@ transWithRedemptions_groupedByProductStoreId <- transWithRedemptions %>%
   group_by(product_id, store_id) %>%
   summarise(total_sales = sum(sales_value))
 
+# Change for shorter name
 transWithRedemptions_grouped <- transWithRedemptions_groupedByProductStoreId
 
 #### Check if there is duplicate comb of product_id and store_id in every row
 duplicates <- transWithRedemptions_grouped %>%
   dplyr::group_by(product_id, store_id) %>%
   dplyr::summarize(count = n()) %>%
-  dplyr::filter(count > 1)
+  dplyr::filter(count > 1) %>%
+
 print(duplicates)
+```
+Note: There is no duplicate, which is expected.
 
-
+```{r}
 # Get unique existing product id and store id from the above
 product_info_id <- unique(transWithRedemptions_groupedByProductStoreId$product_id)
 store_info_id <- unique(transWithRedemptions_groupedByProductStoreId$store_id)
 
-# Get rid of location 0 (not display) for display_location
+# Get rid of display_location=0 (not display)
 promos_display <- promotions %>% 
   select(-(mailer_location:week)) %>% 
   dplyr::distinct(product_id, store_id, display_location, .keep_all = TRUE) %>%
@@ -119,7 +129,7 @@ transWithRedemptions_displayLocation <- transWithRedemptions_groupedByProductSto
   left_join(products, by='product_id') %>%
   select(-c('manufacturer_id', 'brand','package_size'))
 
-# Get rid of location 0 for mailer_location
+# Get rid of mailer_location=0 (not presented in mail)
 promos_mailer <- promotions %>% 
   select(-c(display_location, week)) %>% 
   dplyr::distinct(product_id, store_id, mailer_location, .keep_all = TRUE) %>%
@@ -131,6 +141,14 @@ transWithRedemptions_mailerLocation <- promos_mailer %>%
   left_join(products, by='product_id') %>%
   select(-c('manufacturer_id', 'brand','package_size'))
 
+print(paste("Structure of transactions with redemptions, display location ver:"))
+print(transWithRedemptions_displayLocation, n = 5)
+
+print(paste("Structure of transactions with redemptions, mailer location ver:"))
+print(transWithRedemptions_mailerLocation, n = 5)
+```
+
+```{r}
 # Promotions with display_location = 0, which is not displayed
 promos_display0 <- promotions %>% 
   select(-c(mailer_location, week)) %>% 
@@ -156,25 +174,19 @@ transWithRedemptions_mailerLocationIs0 <- transWithRedemptions_grouped %>%
   select(-c('manufacturer_id', 'brand','package_size'))
 ```
 
-### Without Redemption
 ```{r}
-# Every transaction without redemption
-trans_without_redemption <- transactions %>%
-  dplyr::filter(retail_disc==0 & coupon_disc==0 & coupon_match_disc==0)
-
-# Total sales with grouped by keys: product_id and store_id
-transWithoutRedemption_Grouped <- trans_without_redemption %>% group_by(product_id, store_id) %>% summarise(total_sales = sum(sales_value), .groups="drop")
-
-### Check duplicates
-transWithoutRedemption_Grouped %>% group_by(product_id, store_id) %>% summarise(count = n()) %>% dplyr::filter(count > 1)
-
-# Add info about products to trans
-transWithoutRedemption_Grouped <- transWithoutRedemption_Grouped %>% 
-  left_join(products, by='product_id') %>%
-  select(product_id, store_id, total_sales, department, product_category, product_type)
+print(paste("Structure of transactions with redemptions with no display location:"))
+print(transWithRedemptions_displayLocationIs0, n = 5)
+print(paste("Structure of transactions with redemptions with no mailer location:"))
+print(transWithRedemptions_mailerLocationIs0, n = 5)
 ```
 
-### Export as csv files
+
+
+
+
+
+### Rename datasets for shorter purpose
 ```{r}
 full_transactions <- transWithRedemptions
 trans_w_display <- transWithRedemptions_displayLocation
@@ -184,14 +196,10 @@ trans_w_mailer0 <- transWithRedemptions_mailerLocationIs0
 ```
 
 ## Exploratory Data Analysis {.tabset}
-### Coupon Types Effect on Sales
+### Campaign Types Effect on Sales Value
 - Assuming 'campaign_type' contains different coupon types
 
-We first tried to understand the performances of each campaign type on its redemption counts and total sales value. We achieved this by first joining the coupons related datasets to get every information of coupons. Then, we joined it with the transactions dataset to filter those having coupons redeemed, named full_transactions.
-
-We proceeded to group this by campaign_type in a bid to outline the trend of the totals sales value and redemption counts. This thus highlights Campaign Type A coming far ahead of others campaigns in both redemption count and total sales value. This implies how strong Campaign Type A was in triggering engagement from customers with the products having coupons.
-
-With this in mind, further exposition is called for with regard to the inner mechanics of Campaign Type A. Which products it works best for, the structure of the campaign in and of itself, or what elements make it successful could all help inform actionable insights into how to better construct future campaigns. That could be more attractive discounts, better product placement, or even broader appeal across segments, all of which should be factored in for further analysis.
+We began by analyzing the performance of each campaign type in terms of redemption counts and total sales value. To do this, we first merged the coupon-related datasets to gather all available coupon information. Next, we joined this with the transactions dataset to isolate those transactions where coupons were redeemed, creating a dataset called `full_transactions.` We then grouped the data by `campaign_type` to examine the trend in total sales value and redemption counts.
 
 ```{r, fig.width=13, fig.height=12}
 summary_transactions <- full_transactions %>%
@@ -210,27 +218,29 @@ ggplot(data = summary_transactions, aes(x = campaign_type)) +
     breaks = seq(0, max(summary_transactions$total_sales) + 1, by = 400),
     sec.axis = sec_axis(~., 
                         name = "Total Sales",
-                        breaks = seq(0, max(summary_transactions$total_sales) + 1, by = 400))
+                        breaks = seq(0, max(summary_transactions$total_sales) + 1, by = 400),
+                        labels = scales::dollar)
   ) +
   labs(x = 'Campaign Types', title = "Total Sales Value and Count of Redemptions Per Campaign Type") + 
   scale_fill_manual(name = '', values = c("Count of campaign type" = "lightblue")) +
-  scale_color_manual(name = '', values = c("Total Sales" = 'red')) + 
-  theme_minimal() + 
-  theme(legend.position = 'bottom',
-        axis.title.x = element_text(margin = margin(t = 10)),
-        axis.title.y.left = element_text(margin = margin(r = 10)),
-        axis.title.y.right = element_text(margin = margin(l = 10)),
+  scale_color_manual(name = '', values = c("Total Sales Value" = 'red')) + 
+  theme_classic() + 
+  theme(plot.title = element_text(size = 20),
+        axis.title.x = element_text(margin = margin(t = 10), size = 14),
+        axis.title.y.left = element_text(margin = margin(r = 10), size = 14),
+        axis.title.y.right = element_text(margin = margin(l = 10), size = 14),
+        legend.position = 'bottom',
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 14)
         ) +
   annotate("text", x = "Type A", y = 7603, label = "Exceptionally High", color = "blue", size = 6, vjust = -1)
 ```
 
-Thoughts:
+This analysis revealed that Campaign Type A significantly outperformed other campaigns in both metrics, indicating its effectiveness in driving customer engagement with coupon-related products.
 
-- Type A has significantly higher redemption counts and sales value => might have more look into what type A is, how it works, which products that type A works on most.
+Building on this, we further analyzed the total sales value by department for each campaign to better understand their impact across different product departments.
 
 ```{r, fig.width=12}
-products$product_id <- as.double(products$product_id)
-
 sample <- full_transactions %>%
   group_by(product_id, campaign_type) %>%
   summarise(total = sum(sales_value), .groups="drop") %>%
@@ -239,26 +249,38 @@ sample <- full_transactions %>%
   group_by(campaign_type, department) %>%
   summarise(total_new = sum(total), .groups="drop")
   
-graph1 <- ggplot(data = sample, aes(x = campaign_type, y = department, fill = total_new)) +
+ggplot(data = sample, aes(x = campaign_type, y = department, fill = total_new)) +
   geom_tile() +
-  scale_fill_gradient2(low="white", mid="lightblue", high="blue", name = "Sales Value") +
-  geom_text(aes(label=round(total_new, 2)), color="black", size=4) +
-  theme_minimal() +
+  scale_fill_gradient2(low="white", 
+                       mid="lightblue", 
+                       high="blue", 
+                       name = "Sales Value",
+                       labels = label_dollar()) +
+  geom_text(aes(label = label_dollar()(total_new)), color="black", size=4) +
+  theme_classic() +
   labs(title = "Distribution of Sales Value by Campaign Types and Departments",
        x = "Campaign Types",
        y = "Deparments") +
-  theme(axis.title.x = element_text(margin = margin(t = 10)),
-        axis.title.y = element_text(margin = margin(r = 10)),
-)
+  theme(plot.title = element_text(size = 20),
+        axis.title.x = element_text(margin = margin(t = 10), size = 14),
+        axis.title.y = element_text(margin = margin(r = 10), size = 14),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 14)
+        )
 ```
-- Thoughts:
+- The `GROCERY` department consistently led in total sales value across all campaign types, likely due to the essential nature of these products. For further analysis, we can exclude the 'GROCERY' department to focus on the performance of other departments.
 
-  + The Grocery department stays on top of total sales value regardless of campaign types. This can be explained by being daily necessities. In the following EDA, we can omit Grocery department to see how other departments are doing.
-  + Type A campaign has coupons redeemed mostly and in every department.
+- Campaign Type A consistently drove the highest sales across all departments, suggesting its promotional strategy was highly effective and widely appealing. The strong performance of Type A indicates its potential as a model for future campaigns.
+
+- Campaign Types B and C showed no sales in several departments, possibly indicating that their promotions were not well-targeted or lacked appeal in certain product categories.
+
+
 
 ### Display Location Analysis
-#### Hypothesis: Stuff at certain display locations with coupons will have the most purchase.
-- As mentioned above, we exclude Grocery department in this visualization.
+#### **Hypothesis**: Products placed at certain display locations, when combined with coupon promotions, will result in the highest number of purchases compared to other display locations.
+- As previously noted, we excluded the `GROCERY` department from this EDA to focus on other departments.
+
+- Using the dataset that includes transaction details with display locations, we calculated the total sales value by both display location and department for a more detailed analysis.
 ```{r, fig.width=15, fig.height=8}
 sample <- trans_w_display %>%
   dplyr::filter(department != "GROCERY") %>%
@@ -268,7 +290,7 @@ sample <- trans_w_display %>%
 print(sample, n = 5)
 ```
 
-##### a. Stack bar plot with raw sales value for each display location
+**a. Stack bar plot with actual sales value for each display location**
 ```{r, fig.width=15, fig.height=10}
 ggplot(data = sample, aes(x = display_location, y = total, fill = department)) + 
   geom_bar(stat = "identity", position = "stack") +
@@ -278,19 +300,33 @@ ggplot(data = sample, aes(x = display_location, y = total, fill = department)) +
                                "NUTRITION" = "#3399FF", 
                                "MEAT" = "#FF66CC", 
                                "PASTRY" = "#FF9966", 
-                               "SEAFOOD-PCKGD" = "#99CCFF")) +
+                               "SEAFOOD-PCKGD" = "#99CCFF",
+                               "COSMETICS" = "#b3b3b3",
+                               "PRODUCE" = "#ff7f00")) +
   scale_x_discrete(labels = display_location_labels) +
-  theme_minimal() +
-  labs(title = "Total Sales by Department and Campaign Type in Percentage",
+  scale_y_continuous(labels = label_dollar()) +
+  theme_classic() +
+  labs(title = "Total Sales by Department and Display Locations",
        x = "Display Locations",
        y = "Sales Value",
        fill = "Departments") +
-  theme(axis.title.x = element_text(margin = margin(t = 10)),
-        axis.title.y = element_text(margin = margin(r = 10)),
-)
+  theme(plot.title = element_text(size = 20),
+        axis.title.x = element_text(margin = margin(t = 10), size = 14),
+        axis.title.y = element_text(margin = margin(r = 10), size = 14),
+        axis.text.y = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 14)
+        )
 ```
+- With display locations included, we identified 9 distinct departments, with the `DRUG GM` department consistently having the highest total sales value. The location `Store rear` exhibited the most significant total sales value across all departments, particularly for `MEAT-PCKGD`. This pattern suggests that customers are more likely to purchase products displayed at the store rear, especially packaged meat.
 
-##### b. Stack bar plot with sales value being normalize to percentage
+- The `COSMETICS` department showed notable sales value at the `Front end cap` but lacked visibility in other locations, possibly due to low exposure in those areas.
+
+- Although the products dataset contains 32 unique departments, only 9 departments were represented in the graph with transactions involving coupon redemptions. Regork might want to explore further how display locations impact sales value if coupons are introduced for the remaining departments.
+
+To provide a clearer perspective on department contributions, we converted the above graph into a percentage format, highlighting how each department contributed to the sales value at different display locations.
+
+**b. Stack bar plot with sales value being normalize to percentage**
 ```{r, fig.width=15, fig.height=8}
 total_sales_per_display_location <- sample %>%
   group_by(display_location) %>%
@@ -308,69 +344,88 @@ ggplot(final_df, aes(x = display_location, y = percentage, fill = department)) +
                                "NUTRITION" = "#3399FF", 
                                "MEAT" = "#FF66CC", 
                                "PASTRY" = "#FF9966", 
-                               "SEAFOOD-PCKGD" = "#99CCFF")) +
+                               "SEAFOOD-PCKGD" = "#99CCFF",
+                               "COSMETICS" = "#b3b3b3",
+                               "PRODUCE" = "#ff7f00")) +
   scale_x_discrete(labels = display_location_labels) +
-  theme_minimal() +
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +
+  theme_classic() +
   labs(title = "Total Sales by Department and Campaign Type in Percentage",
        x = "Display Locations",
        y = "Percentage Sales",
        fill = "Departments") +
-  theme(axis.title.x = element_text(margin = margin(t = 10)),
-        axis.title.y = element_text(margin = margin(r = 10)),
-)
+  theme(plot.title = element_text(size = 20),
+        axis.title.x = element_text(margin = margin(t = 10), size = 14),
+        axis.title.y = element_text(margin = margin(r = 10), size = 14),
+        axis.text.y = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 14)
+        )
 ```
-- Thoughts:
-  + Drug GM seems to have the most sales after Grocery department
+In this percentage view, it was evident that `DRUG GM` consistently maintained its strong performance across multiple locations. In contrast, `PRODUCE` had a significant contribution at the `In Shelf` location but underperformed in others.
 
-#### Comparisons between being displayed and not displayed - Having coupons redeemed
-##### Display
-```{r, fig.width=15, fig.height=10}
+To optimize sales, we should consider relocating more `PRODUCE` products from the underperforming locations or adjusting coupon strategies to boost sales in those areas. This could help distribute sales more evenly and take advantage of the untapped potential in different locations.
+
+#### **Comparisons:** Being displayed vs. not displayed - Having coupons redeemed
+```{r}
+# Display
 sample1 <- trans_w_display %>%
   group_by(department) %>%
   summarize(total = sum(total_sales), .groups = 'drop') %>%
-  arrange(desc(department))
+  arrange(desc(department)) %>%
+  mutate(type = "Being Displayed")
 
-ggplot(data = sample1, aes(x = department, y = total)) +
-  geom_bar(stat = "identity", fill = "lightblue") +
-  coord_flip() + 
-  scale_y_continuous(breaks = seq(0, max(sample1$total)+1, by=200)) +
-  geom_text(aes(label = round(total, 2)),
-            hjust = -0.1,
-            color = "black") +
-  labs(title = "Total Sales Across Department for Being Displayed",
-       x = "Departments",
-       y = "Total Sales") +
-  theme_minimal() + 
-  theme(axis.title.x = element_text(margin = margin(t = 10)))
-```
-
-##### Not Display
-```{r, fig.width=15, fig.height=10}
+# Not Display
 sample2 <- trans_w_display0 %>%
   group_by(department) %>%
   summarise(total = sum(total_sales)) %>%
-  arrange(desc(department))
+  arrange(desc(department)) %>%
+  mutate(type = "Not Being Displayed")
 
-ggplot(data = sample2, aes(x = department, y = total)) +
-  geom_bar(stat = "identity", fill = "lightblue") +
-  coord_flip() + 
-  scale_y_continuous(breaks = seq(0, max(sample2$total)+1, by=200)) +
-  geom_text(aes(label = round(total, 2)),
-            hjust = -0.1,
-            color = "black") +
-  labs(title = "Total Sales Across Department for Not Being Displayed",
-       x = "Departments",
-       y = "Total Sales") +
-  theme_minimal() + 
-  theme(axis.title.x = element_text(margin = margin(t = 10)))
+combined <- bind_rows(sample1, sample2)
+combined
 ```
-- Thoughts:
-  + Even without being displayed, Grocery department still has the highest sales value, following by Drug GM department. However, Meat Packaged is no longer at third position. This can implicit that people tends to buy packaged products if being displayed, otherwise people buy fresh meat.
-  
+
+```{r, fig.width=20, fig.height=10}
+ggplot(data = combined, aes(x = department, y = total, fill = type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_y_continuous(breaks = seq(0, max(combined$total) + 1, by = 500),
+                     labels = label_dollar()) +
+  geom_text(aes(label = round(total, 2)), 
+            position = position_dodge(width = 0.9), 
+            vjust = -1, 
+            color = "black") +
+  labs(title = "Total Sales Across Departments with Display/Not Display",
+       x = "Departments",
+       y = "Total Sales",
+       fill = "Display Type") +
+  theme_classic() + 
+  theme(plot.title = element_text(size = 20),
+        axis.title.x = element_text(margin = margin(t = 10), size = 14),
+        axis.title.y = element_text(margin = margin(r = 10), size = 14),
+        axis.text.y = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 14)
+        ) +
+  scale_fill_manual(values = c("Being Displayed" = "lightblue", 
+                               "Not Being Displayed" = "lightgreen"))
+```
+
+- Despite not being actively displayed, the `GROCERY` department continued to lead in total sales value, followed by the `DRUG GM` department. Notably, the `MEAT` department, which likely includes fresh meat, appeared to be purchased primarily when not displayed.
+
+- Another observation is that the `TRAVEL & LEISURE` department only saw purchases when its products were not displayed, suggesting a unique purchasing behavior in this category.
+
+
+
 ### Mailer Location Analysis
-#### Hypothesis: Customer is likely to redeem coupons if products are placed at interior page feature in mail.
+#### **Hypothesis:** Customer is likely to redeem coupons if products are placed at interior page feature in mail.
+
+Similar to display locations, we also wanted to learn the total sales value across departments with mailer locations. 
+
+We first obtained the data by performing grouping and summary:
 ```{r}
 sample <- trans_w_mailer %>%
+  dplyr::filter(department != "GROCERY") %>%
   group_by(mailer_location, department) %>%
   summarise(total = sum(total_sales), .groups = "drop") %>%
   arrange(desc(total))
@@ -378,160 +433,209 @@ sample <- trans_w_mailer %>%
 print(sample, n=5)
 ```
 
-##### a. Stack bar plot with raw sales value for each mailer location
+**a. Stack bar plot with actual sales value for each mailer location**
 ```{r, fig.width=15, fig.height=12}
-sample <- sample %>% dplyr::filter(department != "GROCERY")
-
-
 ggplot(data = sample, aes(x = mailer_location, y = total, fill = department)) +
   geom_bar(stat = "identity", position = "stack") +
   scale_x_discrete(labels = mailer_location_labels) + 
-  scale_fill_manual(values = c("PRODUCE" = "#66c2a5",   
-                               "GROCERY" = "#fc8d62",  
-                               "DRUG GM" = "#8da0cb",      
-                               "MEAT-PCKGD" = "#e78ac3",   
+  scale_fill_manual(values = c("DRUG GM" = "#8da0cb",
                                "MEAT" = "#a6d854",         
-                               "NUTRITION" = "#ffd92f",     
+                               "MEAT-PCKGD" = "#e78ac3",   
+                               "PRODUCE" = "#66c2a5",
+                               "SEAFOOD-PCKGD" = "#fb9a99",
                                "DELI" = "#e5c494",          
                                "SEAFOOD" = "#b3b3b3",      
-                               "PASTRY" = "#1f78b4",       
+                               "NUTRITION" = "#ffd92f",     
                                "COSMETICS" = "#33a02c",    
-                               "SEAFOOD-PCKGD" = "#fb9a99",
-                               "TRAVEL & LEISURE" = "#e31a1c",
-                               "COUPON" = "#ff7f00")) +
-  scale_y_continuous(breaks = seq(0, 3500, by = 500), expand = c(0,2)) +
-  theme_minimal() + 
-  theme(axis.title.x = element_text(margin = margin(t=10)),
-        axis.title.y = element_text(margin = margin(r=10))) +
-  labs(title = "Total Sales by Department and Campaign Type",
+                               "COUPON" = "#ff7f00",
+                               "PASTRY" = "#1f78b4",       
+                               "TRAVEL & LEISURE" = "#e31a1c")) +
+  scale_y_continuous(breaks = seq(0, 3500, by = 500),
+                     labels = label_dollar()) +
+  theme_classic() + 
+  theme(plot.title = element_text(size = 20),
+        axis.title.x = element_text(margin = margin(t = 10), size = 14),
+        axis.title.y = element_text(margin = margin(r = 10), size = 14),
+        axis.text.y = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 14)
+        ) +
+  labs(title = "Total Sales by Department and Mailer Locations",
        x = "Mailer Locations",
        y = "Total Sale",
        fill = "Departments")
-
 ```
-Thoughts:
+- With mailer locations, more departments were represented compared to display locations, but `MEAT` and `MEAT-PCKGD` still dominated in total sales value across various locations. Interestingly, `DRUG GM` now concentrated its sales value primarily on the `Interior page feature`, unlike the broader distribution seen in display locations.
 
-- TBD
+- As noted earlier, while the `products` dataset includes 32 unique departments, only 13 were reflected in this analysis. Regork may want to explore opportunities to promote the remaining departments using coupons in mailer locations.
 
-##### b. Stack bar plot with sales value being normalize to percentage
-```{r, fig.width=12, fig.height=8} 
-total_sales_per_display_location <- sample %>%
+- The `TRAVEL & LEISURE` department, which wasn't seen in the display locations analysis, showed a small sales value across three different mailer locations. It may be worth conducting a survey to determine whether increasing this department's presence in mailers, particularly in the `Interior page feature`, could boost its sales value.
+
+**b. Stack bar plot with sales value being normalize to percentage**
+```{r, fig.width=15, fig.height=8} 
+total_sales_per_mailer_location <- sample %>%
   group_by(mailer_location) %>%
   summarise(total_sales_location = sum(total), .groups = "drop")
 
 final_df <- sample %>%
-  left_join(total_sales_per_display_location, by = "mailer_location") %>%
+  left_join(total_sales_per_mailer_location, by = "mailer_location") %>%
   mutate(percentage = round((total / total_sales_location) * 100,2))
 
 ggplot(final_df, aes(x = mailer_location, y = percentage, fill = department)) +
   geom_bar(stat = "identity", position = "stack") +
-  scale_fill_manual(values = c("PRODUCE" = "#66c2a5",   
-                               "GROCERY" = "#fc8d62",  
-                               "DRUG GM" = "#8da0cb",      
-                               "MEAT-PCKGD" = "#e78ac3",   
+  scale_fill_manual(values = c("DRUG GM" = "#8da0cb",
                                "MEAT" = "#a6d854",         
-                               "NUTRITION" = "#ffd92f",     
+                               "MEAT-PCKGD" = "#e78ac3",   
+                               "PRODUCE" = "#66c2a5",
+                               "SEAFOOD-PCKGD" = "#fb9a99",
                                "DELI" = "#e5c494",          
                                "SEAFOOD" = "#b3b3b3",      
-                               "PASTRY" = "#1f78b4",       
+                               "NUTRITION" = "#ffd92f",     
                                "COSMETICS" = "#33a02c",    
-                               "SEAFOOD-PCKGD" = "#fb9a99",
-                               "TRAVEL & LEISURE" = "#e31a1c",
-                               "COUPON" = "#ff7f00")) +
+                               "COUPON" = "#ff7f00",
+                               "PASTRY" = "#1f78b4",       
+                               "TRAVEL & LEISURE" = "#e31a1c")) +
   scale_x_discrete(labels = mailer_location_labels) +
-  theme_minimal() +
-  scale_y_continuous(expand = c(0,2)) +
-  theme(axis.title.x = element_text(margin = margin(t=10)),
-        axis.title.y = element_text(margin = margin(r=10))) +
+  theme_classic() +
+  scale_y_continuous(expand = c(0,2),
+                     labels = scales::percent_format(scale = 1)) +
+  theme(plot.title = element_text(size = 20),
+        axis.title.x = element_text(margin = margin(t = 10), size = 14),
+        axis.title.y = element_text(margin = margin(r = 10), size = 14),
+        axis.text.y = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 14)
+        ) +
   labs(title = "Total Sales by Department and Campaign Type in Percentage",
        x = "Mailer Locations",
        y = "Percentage Sales",
        fill = "Departments")
 ```
-Thoughts:
+- With percentage view, `DELI` department contribution to sales value was seen more clearly now. There were too many departments being presented at `Interior page feature`. We can try to minimize this and further study the concentration of each department on specific mailer location.
 
-- TBD
 
-#### Comparisons between being displayed and not displayed in mail - Having coupons redeemed
-##### Mail Displayed
+
+#### **Comparisons:** Being presented and not presented in mail - Having coupons redeemed
 ```{r, fig.width=15, fig.height=10}
+# Mail presented
 sample1 <- trans_w_mailer %>%
   dplyr::filter(department!="GROCERY") %>%
   group_by(department) %>%
   summarize(total = sum(total_sales), .groups = 'drop') %>%
-  arrange(desc(department))
+  arrange(desc(department)) %>%
+  mutate(type = "Mail Presented")
 
-ggplot(data = sample1, aes(x = department, y = total)) +
-  geom_bar(stat = "identity", fill = "purple", width=0.5) +
-  coord_flip() + 
-  geom_text(aes(label = round(total, 2)),
-            hjust = -0.1,
-            color = "black") +
-  labs(title = "Total Sales Across Department for Being Not Displayed in Mail",
-       x = "Departments",
-       y = "Total Sales") +
-  theme_minimal() + 
-  theme(axis.text.x = element_blank())
-```
-##### Not Mail Displayed
-```{r, fig.width=15, fig.height=10}
+# Not Mail presented
 sample2 <- trans_w_mailer0 %>%
   dplyr::filter(department != "GROCERY") %>%
   group_by(department) %>%
   summarise(total = sum(total_sales)) %>%
-  arrange(desc(department))
+  arrange(desc(department)) %>%
+  mutate(type = "Not Mail Presented")
 
-ggplot(data = sample2, aes(x = department, y = total)) +
-  geom_bar(stat = "identity", fill = "purple", width=0.5) +
-  coord_flip() + 
-  geom_text(aes(label = round(total, 2)),
-            hjust = -0.1,
-            color = "black") +
-  labs(title = "Total Sales Across Department for Not Being Displayed in Mail",
-       x = "Departments",
-       y = "Total Sales") +
-  theme_minimal() + 
-  theme(axis.text.x = element_blank())
+combined <- bind_rows(sample1, sample2)
+combined
 ```
+```{r, fig.width=18, fig.height=15}
+ggplot(data = combined, aes(x = department, y = total, fill = type)) +
+  geom_bar(stat = "identity", position = "dodge") +  
+  scale_y_continuous(breaks = seq(0, max(combined$total) + 100, by = 500),
+                     labels = label_dollar()) +
+  geom_text(aes(label = scales::label_dollar()(total)), 
+            position = position_dodge(width = 0.9), 
+            vjust = -1, 
+            color = "black") +
+  labs(title = "Total Sales Across Departments with Mail Presence",
+       x = "Departments",
+       y = "Total Sales",
+       fill = "Mail Presence Type") +
+  theme_classic() + 
+  theme(plot.title = element_text(size = 20),
+        axis.title.x = element_text(margin = margin(t = 10), size = 14),
+        axis.title.y = element_text(margin = margin(r = 10), size = 14),
+        axis.text.y = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 14)
+        ) +
+  scale_fill_manual(values = c("Mail Presented" = "lightblue", 
+                               "Not Mail Presented" = "lightgreen"))
+```
+It is evident that no department generated higher sales value without being featured in the mail. Notably, `COUPON` and `TRAVEL & LEISURE` were the only two departments that saw no sales when not included in mail promotions. In contrast to the display location analysis, the `MEAT` department showed a significant increase in sales when featured in mailers, with sales approximately 200 times higher than not being displayed. This underscores the importance of ensuring that `MEAT` continues to be prominently featured in mail campaigns.
 
 ### Display vs. Mailer Promotions
-```{r}
+Next, we aimed to compare the sales values between departments based on their presentation type: display location and mailer location. This analysis will help us identify which promotional strategy—display or mailer—is more effective for each department, allowing us to better understand how presentation type influences customer purchasing behavior and overall sales performance across departments.
+
+```{r, fig.width=18, fig.height=12}
 mailer_promo <- trans_w_mailer %>%
   select(department, total_sales) %>%
   group_by(department) %>%
   summarise(total = sum(total_sales), .groups="drop") %>%
-  mutate(promo_type = "mail")
+  mutate(promo_type = "Mail")
 
 display_promo <- trans_w_display %>%
   ungroup() %>%
   select(department, total_sales) %>%
   group_by(department) %>%
   summarise(total = sum(total_sales), .groups="drop") %>%
-  mutate(promo_type = "display")
+  mutate(promo_type = "Display")
 
 summary_data <- bind_rows(mailer_promo, display_promo)
-```
 
-```{r, fig.width=15, fig.height=20}
-ggplot(data = summary_data, aes(x = department, y = total, fill = promo_type)) +
-  geom_bar(stat = "identity", position = "dodge") +
-  scale_fill_manual(values = c("lightblue", "orange")) +
-  geom_text(aes(label = round(total,2)), position = position_dodge(width = 0.9), vjust = -0.3, color = "black")
-```
-
-```{r, fig.width=13, fig.height=12}
-ggplot(data = summary_data, aes(x = total, y = department, color = promo_type)) +
-  geom_point(alpha = 0.6, size = 5) + 
-  scale_x_log10() +
+ggplot(data = summary_data, aes(x = department, y = total, color = promo_type)) +
+  geom_point(alpha = 0.6, size = 10) +
+  geom_segment(aes(xend = department, yend = 0), linetype = "dotted", linewidth = 1.5) + 
   labs(title = "Sales Comparison Between Display and Mailer Promotions",
        x = "Department",
        y = "Total Sales",
-       color = "Exhibit Types") +
-  theme_classic()
+       color = "Presented Type") +
+  scale_y_continuous(breaks = seq(0, max(summary_data$total) + 1, by = 300),
+                     labels = label_dollar()) +
+  theme_classic() +
+  theme(plot.title = element_text(size = 20),
+        axis.title.x = element_text(margin = margin(t = 10), size = 14),
+        axis.title.y = element_text(margin = margin(r = 10), size = 14),
+        axis.text.y = element_text(size = 12),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 14)
+        )
 ```
 
+Nevertheless, the `GROCERY` department remained the top performer across all promotion types. However, it appears that presenting promotions through mail generally led to higher sales. This suggests that customers tend to purchase and redeem coupons more frequently when they see promotions in the mail, indicating a shift in consumer behavior toward online shopping.
+
+Regork could consider conducting a study on online shopping behavior and specifically test the effectiveness of Type A promotion campaigns via mailing.
 
 
+
+## Summary
+**1. Insights**
+
+- The Type A promotion campaign proved to be the most effective promotional strategy, generating over $7,600 in sales value and approximately 2,400 redemption counts across all departments. This success suggests that Type A can serve as a model for future marketing campaigns. However, there are departments that were not included in this campaign. We recommend conducting further analysis to determine how well Type A strategies could be applied to those departments and whether it could lead to an increase in their sales value.
+
+- Additionally, Type B and Type C campaigns did not generate sales from several departments. This warrants further investigation into the factors that may have contributed to this lack of sales, which could help refine future promotional strategies and increase their effectiveness.
+
+***a. Display Locations***
+
+- In the analysis of display locations, the `MEAT-PCKGD` department had significantly higher sales value at the `Store rear` compared to other locations. This suggests that Regork might want to consider placing more products from the `MEAT-PCKGD` department in the store rear. A similar strategy could be applied to the `PRODUCE` department, where placing products in the `In shelf` location could boost sales.
+
+- When comparing sales value between displayed and non-displayed products, the results were surprising. Except for `GROCERY`, `MEAT` had significantly higher sales value when not displayed compared to when it was displayed. This trend was also observed in the `PRODUCE` and `TRAVEL & LEISURE` departments, with the latter not appearing in the display location analysis. We recommend running a campaign that places `TRAVEL & LEISURE` products in display locations with coupons to see if this generates a noticeable increase in sales value. 
+
+***b. Mailer Locations***
+
+- In the mailer locations analysis, more departments showed sales value compared to the display locations. Specifically, departments like `TRAVEL & LEISURE` and `DELI`, which were not seen in the display location analysis, became more prominent when looking at the percentage view. The total sales value in mail locations was generally higher than in display locations, suggesting a shift in consumer behavior toward online shopping. Regork may want to consider investing further in technologies that support online promotions to capitalize on this trend and drive higher revenue.
+
+- A comparison between mail presence and no mail presence indicates that sales value was significantly higher when promotions were presented via mail. This approach should be continued, and further campaign strategies should be developed to optimize the effectiveness of this promotional method.
+
+***c. Display vs. Mailer***
+
+- As noted earlier, there has been a noticeable shift in customer behavior towards online shopping. This is a key area where Regork can further invest. By analyzing the impact of mailer locations, the marketing team at Regork can study how to integrate departments that were not previously included in promotions. This could present opportunities to increase sales value for those departments and offer coupons for their products, potentially driving higher engagement and revenue.
+
+**2. Limitations**
+
+- We have not yet considered the impact of time frames on these promotional campaigns. Future work should include an analysis of how the timing of promotions influences sales performance.
+
+- The assumption made at the beginning of the report, that all transactions with any discount are redeemed coupons, has yet to be confirmed. Further validation of this assumption is necessary to ensure the accuracy of the analysis.
+
+- There are approximately 2 million coupon redemptions without corresponding transaction records. Collecting more data on these redemptions could provide valuable insights and potentially affect the total sales value of the different campaign types.
 
 
 
