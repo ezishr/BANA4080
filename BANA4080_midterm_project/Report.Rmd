@@ -1,31 +1,186 @@
 ---
-title: "Report"
-output: html_notebook
+title:
+output:
+  html_notebook: default
+  html_document:
+    theme: cerulean
+    toc: true
+    toc_depth: 2
 ---
+# Report {.tabset}
 
-## 1. Setup
+## Introduction 
 
+## Packages Required
 ```{r}
 library(tidyverse)
 library(here)
 library(lubridate)
 library(ggplot2)
 library(readr)
-path <- here('BANA4080_midterm_project', 'main_data')
+library(completejourney)
+library(readr)
 ```
+## Data Preparation {.tabset}
 
-## 2. Load datasets
+### Setup
 ```{r}
-full_transactions <- read_csv(here(path, "Final_Transactions_With_Redemptions.csv"))
-trans_w_display <- read_csv(here(path, "Transactions_W_Redemptions_Display_Location.csv"))
-trans_w_mailer <- read_csv(here(path, "Transactions_W_Redemptions_Mailer_Location.csv"))
-trans_w_display0 <- read_csv(here(path, "Transactions_W_Redemptions_Not_Displayed.csv"))
-trans_w_mailer0 <- read_csv(here(path, "Transactions_W_Redemptions_Not_Mailed.csv"))
+c(promotions, transactions) %<-% get_data(which = 'both', verbose = FALSE)
+# setwd('/Users/ezishr/Documents/CINCY/Fall 2024/BANA 4080/BANA4080_midterm_project')
+
+transactions <- transactions %>% mutate(date = as.Date(transaction_timestamp))
+transactions$product_id <- as.double(transactions$product_id)
+promotions$product_id <- as.double(promotions$product_id)
+products$product_id <- as.double(products$product_id)
+coupons$product_id <- as.double(coupons$product_id)
+
+display_location_labels <- c("0"="No display", 
+                             "1"="Store front", 
+                             "2"="Store rear", 
+                             "3"="Front end cap", 
+                             "4"="Mid-aisle end cap", 
+                             "5"="Rear end cap", 
+                             "6"="Side aisle end cap", 
+                             "7"="In-aisle", 
+                             "9"="Secondary location display", 
+                             "A"="In-shelf")
+
+mailer_location_labels <- c("0"="Not on ad", 
+                            "A"="Interior page feature", 
+                            "C"="Interior page line item", 
+                            "D"="Front page feature", 
+                            "F"="Back page feature", 
+                            "H"="Wrap front feature", 
+                            "J"="Wrap interior coupon", 
+                            "L"="Wrap back feature", 
+                            "P"="Interior page coupon", 
+                            "X"="Free on interior page", 
+                            "Z"="Free on front page/back page/or wrap")
+
 ```
 
-## 3. Hypothesis: Different coupon types affect sales differently
+### With Redemption
+Assumption: transactions with any discount are redeemed coupons
+```{r}
+trans1 <- transactions %>% 
+  dplyr::filter(retail_disc>0 | coupon_disc>0 | coupon_match_disc>0) %>%
+  select(household_id, store_id, product_id, sales_value:coupon_match_disc, week, date) 
+
+# Join coupons, coupon_redemptions, campaign_description to get full info of coupons
+redemptions <- coupons %>%
+  inner_join(campaign_descriptions) %>%
+  inner_join(coupon_redemptions, relationship = 'many-to-many') %>%
+  rename(date = redemption_date)
+
+# Every transaction with redemption
+sample_df <- redemptions %>%
+  left_join(trans1, by = c('household_id','product_id','date'), relationship = 'many-to-many')
+
+colSums(is.na(sample_df)) # there are roughly 2M coupons redemption w/o transaction records
+
+transWithRedemptions <- redemptions %>%
+  inner_join(trans1, by = c('household_id','product_id','date'), relationship = 'many-to-many') %>%
+  arrange(desc(product_id))
+
+# Total sales from transactions with redemption, grouped by product_id and store_id
+transWithRedemptions_groupedByProductStoreId <- transWithRedemptions %>%
+  group_by(product_id, store_id) %>%
+  summarise(total_sales = sum(sales_value))
+
+transWithRedemptions_grouped <- transWithRedemptions_groupedByProductStoreId
+
+#### Check if there is duplicate comb of product_id and store_id in every row
+duplicates <- transWithRedemptions_grouped %>%
+  dplyr::group_by(product_id, store_id) %>%
+  dplyr::summarize(count = n()) %>%
+  dplyr::filter(count > 1)
+print(duplicates)
+
+
+# Get unique existing product id and store id from the above
+product_info_id <- unique(transWithRedemptions_groupedByProductStoreId$product_id)
+store_info_id <- unique(transWithRedemptions_groupedByProductStoreId$store_id)
+
+# Get rid of location 0 (not display) for display_location
+promos_display <- promotions %>% 
+  select(-(mailer_location:week)) %>% 
+  dplyr::distinct(product_id, store_id, display_location, .keep_all = TRUE) %>%
+  dplyr::filter(display_location != 0)
+
+# Join display location to transactions with redemption by keys: product_id and store_id
+transWithRedemptions_displayLocation <- transWithRedemptions_groupedByProductStoreId %>%
+  inner_join(promos_display, by=c('product_id', 'store_id')) %>%
+  left_join(products, by='product_id') %>%
+  select(-c('manufacturer_id', 'brand','package_size'))
+
+# Get rid of location 0 for mailer_location
+promos_mailer <- promotions %>% 
+  select(-c(display_location, week)) %>% 
+  dplyr::distinct(product_id, store_id, mailer_location, .keep_all = TRUE) %>%
+  dplyr::filter(mailer_location != 0)
+
+# Join mailer location to transactions with redemption by keys: product_id and store_id
+transWithRedemptions_mailerLocation <- promos_mailer %>%
+  inner_join(transWithRedemptions_groupedByProductStoreId, by=c('product_id', 'store_id')) %>%
+  left_join(products, by='product_id') %>%
+  select(-c('manufacturer_id', 'brand','package_size'))
+
+# Promotions with display_location = 0, which is not displayed
+promos_display0 <- promotions %>% 
+  select(-c(mailer_location, week)) %>% 
+  dplyr::filter(display_location == 0) %>%
+  dplyr::distinct(product_id, store_id, .keep_all = TRUE)
+  
+# Join display location = 0 to transactions with redemption by keys product_id and store_id
+transWithRedemptions_displayLocationIs0 <- transWithRedemptions_grouped %>%
+  semi_join(promos_display0, by = c("product_id", "store_id")) %>%
+  left_join(products, by='product_id') %>%
+  select(-c('manufacturer_id', 'brand','package_size'))
+
+# Promotions with mailer_location = 0, which is not displayed
+promos_mailer0 <- promotions %>% 
+  select(-c(display_location, week)) %>% 
+  dplyr::filter(mailer_location == 0) %>%
+  dplyr::distinct(product_id, store_id, .keep_all = TRUE)
+
+# Join mailer location to transactions with redemptions by keys product_id and store_id
+transWithRedemptions_mailerLocationIs0 <- transWithRedemptions_grouped %>%
+  semi_join(promos_mailer0, by = c("product_id", "store_id")) %>%
+  left_join(products, by='product_id') %>%
+  select(-c('manufacturer_id', 'brand','package_size'))
+```
+
+### Without Redemption
+```{r}
+# Every transaction without redemption
+trans_without_redemption <- transactions %>%
+  dplyr::filter(retail_disc==0 & coupon_disc==0 & coupon_match_disc==0)
+
+# Total sales with grouped by keys: product_id and store_id
+transWithoutRedemption_Grouped <- trans_without_redemption %>% group_by(product_id, store_id) %>% summarise(total_sales = sum(sales_value), .groups="drop")
+
+### Check duplicates
+transWithoutRedemption_Grouped %>% group_by(product_id, store_id) %>% summarise(count = n()) %>% dplyr::filter(count > 1)
+
+# Add info about products to trans
+transWithoutRedemption_Grouped <- transWithoutRedemption_Grouped %>% 
+  left_join(products, by='product_id') %>%
+  select(product_id, store_id, total_sales, department, product_category, product_type)
+```
+
+### Export as csv files
+```{r}
+full_transactions <- transWithRedemptions
+trans_w_display <- transWithRedemptions_displayLocation
+trans_w_mailer <- transWithRedemptions_mailerLocation
+trans_w_display0 <- transWithRedemptions_displayLocationIs0
+trans_w_mailer0 <- transWithRedemptions_mailerLocationIs0
+```
+
+## Exploratory Data Analysis {.tabset}
+### Coupon Types Effect on Sales
 - Assuming 'campaign_type' contains different coupon types
-```{r, fig.width=10, fig.height=12}
+```{r, fig.width=13, fig.height=12}
 summary_transactions <- full_transactions %>%
   group_by(campaign_type) %>%
   summarise(
@@ -44,40 +199,322 @@ ggplot(data = summary_transactions, aes(x = campaign_type)) +
                         name = "Total Sales",
                         breaks = seq(0, max(summary_transactions$total_sales) + 1, by = 400))
   ) +
-  labs(x = 'Campaign Type', title = "Summary") + 
+  labs(x = 'Campaign Types', title = "Total Sales Value and Count of Redemptions Per Campaign Type") + 
   scale_fill_manual(name = '', values = c("Count of campaign type" = "lightblue")) +
   scale_color_manual(name = '', values = c("Total Sales" = 'red')) + 
   theme_minimal() + 
-  theme(legend.position = 'bottom')
+  theme(legend.position = 'bottom',
+        axis.title.x = element_text(margin = margin(t = 10)),
+        axis.title.y.left = element_text(margin = margin(r = 10)),
+        axis.title.y.right = element_text(margin = margin(l = 10)),
+        ) +
+  annotate("text", x = "Type A", y = 7603, label = "Exceptionally High", color = "blue", size = 6, vjust = -1)
 ```
-## 4. Customer is likely to buy stuff at store-front even without coupons
-- Draft
-```{r, fig.width=10, fig.height=10}
+
+Thoughts:
+
+- Type A has significantly higher redemption counts and sales value => might have more look into what type A is, how it works, which products that type A works on most.
+
+```{r, fig.width=12}
+products$product_id <- as.double(products$product_id)
+
 sample <- full_transactions %>%
-  mutate(month_year = format(date, "%Y-%m")) %>%
-  group_by(month_year) %>% 
-  summarise(total = sum(sales_value))
-
-ggplot(data = sample, aes(x = month_year, y = total)) +
-  geom_line(group = 1) + 
-  geom_point()
+  group_by(product_id, campaign_type) %>%
+  summarise(total = sum(sales_value), .groups="drop") %>%
+  left_join(products, by="product_id") %>%
+  select(campaign_type, department, total) %>%
+  group_by(campaign_type, department) %>%
+  summarise(total_new = sum(total), .groups="drop")
+  
+ggplot(data = sample, aes(x = campaign_type, y = department, fill = total_new)) +
+  geom_tile() +
+  scale_fill_gradient2(low="white", mid="lightblue", high="blue", name = "Sales Value") +
+  geom_text(aes(label=round(total_new, 2)), color="black", size=4) +
+  theme_minimal() +
+  labs(title = "Distribution of Sales Value by Campaign Types and Departments",
+       x = "Campaign Types",
+       y = "Deparments") +
+  theme(axis.title.x = element_text(margin = margin(t = 10)),
+        axis.title.y = element_text(margin = margin(r = 10)),
+)
 ```
+- Thoughts:
 
-- Draft 2:
-```{r}
+  + The Grocery department stays on top of total sales value regardless of campaign types. This can be explained by being daily necessities. In the following EDA, we can omit Grocery department to see how other departments are doing.
+  + Type A campaign has coupons redeemed mostly and in every department.
+
+### Display Location Analysis
+#### Hypothesis: Stuff at certain display locations with coupons will have the most purchase.
+- As mentioned above, we exclude Grocery department in this visualization.
+```{r, fig.width=15, fig.height=8}
 sample <- trans_w_display %>%
+  dplyr::filter(department != "GROCERY") %>%
   group_by(display_location, department) %>%
-  summarize(total = sum(total_sales), .groups = 'drop') %>%
-  group_by(department) %>%  # Corrected the typo here
-  dplyr::filter(n() > 1) %>% 
-  ungroup()
+  summarize(total = sum(total_sales), .groups = 'drop')
+
+print(sample, n = 5)
 ```
 
+##### a. Stack bar plot with raw sales value for each display location
+```{r, fig.width=15, fig.height=10}
+ggplot(data = sample, aes(x = display_location, y = total, fill = department)) + 
+  geom_bar(stat = "identity", position = "stack") +
+  scale_fill_manual(values = c("DELI" = "#FF9999", 
+                               "DRUG GM" = "#66CC99", 
+                               "MEAT-PCKGD" = "#FFCC00", 
+                               "NUTRITION" = "#3399FF", 
+                               "MEAT" = "#FF66CC", 
+                               "PASTRY" = "#FF9966", 
+                               "SEAFOOD-PCKGD" = "#99CCFF")) +
+  scale_x_discrete(labels = display_location_labels) +
+  theme_minimal() +
+  labs(title = "Total Sales by Department and Campaign Type in Percentage",
+       x = "Display Locations",
+       y = "Sales Value",
+       fill = "Departments") +
+  theme(axis.title.x = element_text(margin = margin(t = 10)),
+        axis.title.y = element_text(margin = margin(r = 10)),
+)
+```
+
+##### b. Stack bar plot with sales value being normalize to percentage
+```{r, fig.width=15, fig.height=8}
+total_sales_per_display_location <- sample %>%
+  group_by(display_location) %>%
+  summarise(total_sales_location = sum(total), .groups = "drop")
+
+final_df <- sample %>%
+  left_join(total_sales_per_display_location, by = "display_location") %>%
+  mutate(percentage = round((total / total_sales_location) * 100,2))
+
+ggplot(final_df, aes(x = display_location, y = percentage, fill = department)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_fill_manual(values = c("DELI" = "#FF9999", 
+                               "DRUG GM" = "#66CC99", 
+                               "MEAT-PCKGD" = "#FFCC00", 
+                               "NUTRITION" = "#3399FF", 
+                               "MEAT" = "#FF66CC", 
+                               "PASTRY" = "#FF9966", 
+                               "SEAFOOD-PCKGD" = "#99CCFF")) +
+  scale_x_discrete(labels = display_location_labels) +
+  theme_minimal() +
+  labs(title = "Total Sales by Department and Campaign Type in Percentage",
+       x = "Display Locations",
+       y = "Percentage Sales",
+       fill = "Departments") +
+  theme(axis.title.x = element_text(margin = margin(t = 10)),
+        axis.title.y = element_text(margin = margin(r = 10)),
+)
+```
+- Thoughts:
+  + Drug GM seems to have the most sales after Grocery department
+
+#### Comparisons between being displayed and not displayed - Having coupons redeemed
+##### Display
+```{r, fig.width=15, fig.height=10}
+sample1 <- trans_w_display %>%
+  group_by(department) %>%
+  summarize(total = sum(total_sales), .groups = 'drop') %>%
+  arrange(desc(department))
+
+ggplot(data = sample1, aes(x = department, y = total)) +
+  geom_bar(stat = "identity", fill = "lightblue") +
+  coord_flip() + 
+  scale_y_continuous(breaks = seq(0, max(sample1$total)+1, by=200)) +
+  geom_text(aes(label = round(total, 2)),
+            hjust = -0.1,
+            color = "black") +
+  labs(title = "Total Sales Across Department for Being Displayed",
+       x = "Departments",
+       y = "Total Sales") +
+  theme_minimal() + 
+  theme(axis.title.x = element_text(margin = margin(t = 10)))
+```
+
+##### Not Display
+```{r, fig.width=15, fig.height=10}
+sample2 <- trans_w_display0 %>%
+  group_by(department) %>%
+  summarise(total = sum(total_sales)) %>%
+  arrange(desc(department))
+
+ggplot(data = sample2, aes(x = department, y = total)) +
+  geom_bar(stat = "identity", fill = "lightblue") +
+  coord_flip() + 
+  scale_y_continuous(breaks = seq(0, max(sample2$total)+1, by=200)) +
+  geom_text(aes(label = round(total, 2)),
+            hjust = -0.1,
+            color = "black") +
+  labs(title = "Total Sales Across Department for Not Being Displayed",
+       x = "Departments",
+       y = "Total Sales") +
+  theme_minimal() + 
+  theme(axis.title.x = element_text(margin = margin(t = 10)))
+```
+- Thoughts:
+  + Even without being displayed, Grocery department still has the highest sales value, following by Drug GM department. However, Meat Packaged is no longer at third position. This can implicit that people tends to buy packaged products if being displayed, otherwise people buy fresh meat.
+  
+### Mailer Location Analysis
+#### Hypothesis: Customer is likely to redeem coupons if products are placed at interior page feature in mail.
+```{r}
+sample <- trans_w_mailer %>%
+  group_by(mailer_location, department) %>%
+  summarise(total = sum(total_sales), .groups = "drop") %>%
+  arrange(desc(total))
+
+print(sample, n=5)
+```
+
+##### a. Stack bar plot with raw sales value for each mailer location
+```{r, fig.width=15, fig.height=12}
+sample <- sample %>% dplyr::filter(department != "GROCERY")
 
 
+ggplot(data = sample, aes(x = mailer_location, y = total, fill = department)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_x_discrete(labels = mailer_location_labels) + 
+  scale_fill_manual(values = c("PRODUCE" = "#66c2a5",   
+                               "GROCERY" = "#fc8d62",  
+                               "DRUG GM" = "#8da0cb",      
+                               "MEAT-PCKGD" = "#e78ac3",   
+                               "MEAT" = "#a6d854",         
+                               "NUTRITION" = "#ffd92f",     
+                               "DELI" = "#e5c494",          
+                               "SEAFOOD" = "#b3b3b3",      
+                               "PASTRY" = "#1f78b4",       
+                               "COSMETICS" = "#33a02c",    
+                               "SEAFOOD-PCKGD" = "#fb9a99",
+                               "TRAVEL & LEISURE" = "#e31a1c",
+                               "COUPON" = "#ff7f00")) +
+  scale_y_continuous(breaks = seq(0, 3500, by = 500), expand = c(0,2)) +
+  theme_minimal() + 
+  theme(axis.title.x = element_text(margin = margin(t=10)),
+        axis.title.y = element_text(margin = margin(r=10))) +
+  labs(title = "Total Sales by Department and Campaign Type",
+       x = "Mailer Locations",
+       y = "Total Sale",
+       fill = "Departments")
+```
+Thoughts:
 
+- TBD
 
+##### b. Stack bar plot with sales value being normalize to percentage
+```{r, fig.width=12, fig.height=8} 
+total_sales_per_display_location <- sample %>%
+  group_by(mailer_location) %>%
+  summarise(total_sales_location = sum(total), .groups = "drop")
 
+final_df <- sample %>%
+  left_join(total_sales_per_display_location, by = "mailer_location") %>%
+  mutate(percentage = round((total / total_sales_location) * 100,2))
+
+ggplot(final_df, aes(x = mailer_location, y = percentage, fill = department)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_fill_manual(values = c("PRODUCE" = "#66c2a5",   
+                               "GROCERY" = "#fc8d62",  
+                               "DRUG GM" = "#8da0cb",      
+                               "MEAT-PCKGD" = "#e78ac3",   
+                               "MEAT" = "#a6d854",         
+                               "NUTRITION" = "#ffd92f",     
+                               "DELI" = "#e5c494",          
+                               "SEAFOOD" = "#b3b3b3",      
+                               "PASTRY" = "#1f78b4",       
+                               "COSMETICS" = "#33a02c",    
+                               "SEAFOOD-PCKGD" = "#fb9a99",
+                               "TRAVEL & LEISURE" = "#e31a1c",
+                               "COUPON" = "#ff7f00")) +
+  scale_x_discrete(labels = mailer_location_labels) +
+  theme_minimal() +
+  scale_y_continuous(expand = c(0,2)) +
+  theme(axis.title.x = element_text(margin = margin(t=10)),
+        axis.title.y = element_text(margin = margin(r=10))) +
+  labs(title = "Total Sales by Department and Campaign Type in Percentage",
+       x = "Mailer Locations",
+       y = "Percentage Sales",
+       fill = "Departments")
+```
+Thoughts:
+
+- TBD
+
+#### Comparisons between being displayed and not displayed in mail - Having coupons redeemed
+##### Mail Displayed
+```{r, fig.width=15, fig.height=10}
+sample1 <- trans_w_mailer %>%
+  dplyr::filter(department!="GROCERY") %>%
+  group_by(department) %>%
+  summarize(total = sum(total_sales), .groups = 'drop') %>%
+  arrange(desc(department))
+
+ggplot(data = sample1, aes(x = department, y = total)) +
+  geom_bar(stat = "identity", fill = "purple", width=0.5) +
+  coord_flip() + 
+  geom_text(aes(label = round(total, 2)),
+            hjust = -0.1,
+            color = "black") +
+  labs(title = "Total Sales Across Department for Being Not Displayed in Mail",
+       x = "Departments",
+       y = "Total Sales") +
+  theme_minimal() + 
+  theme(axis.text.x = element_blank())
+```
+##### Not Mail Displayed
+```{r, fig.width=15, fig.height=10}
+sample2 <- trans_w_mailer0 %>%
+  dplyr::filter(department != "GROCERY") %>%
+  group_by(department) %>%
+  summarise(total = sum(total_sales)) %>%
+  arrange(desc(department))
+
+ggplot(data = sample2, aes(x = department, y = total)) +
+  geom_bar(stat = "identity", fill = "purple", width=0.5) +
+  coord_flip() + 
+  geom_text(aes(label = round(total, 2)),
+            hjust = -0.1,
+            color = "black") +
+  labs(title = "Total Sales Across Department for Not Being Displayed in Mail",
+       x = "Departments",
+       y = "Total Sales") +
+  theme_minimal() + 
+  theme(axis.text.x = element_blank())
+```
+
+### Display vs. Mailer Promotions
+```{r}
+mailer_promo <- trans_w_mailer %>%
+  select(department, total_sales) %>%
+  group_by(department) %>%
+  summarise(total = sum(total_sales), .groups="drop") %>%
+  mutate(promo_type = "mail")
+
+display_promo <- trans_w_display %>%
+  ungroup() %>%
+  select(department, total_sales) %>%
+  group_by(department) %>%
+  summarise(total = sum(total_sales), .groups="drop") %>%
+  mutate(promo_type = "display")
+
+summary_data <- bind_rows(mailer_promo, display_promo)
+```
+
+```{r, fig.width=15, fig.height=20}
+ggplot(data = summary_data, aes(x = department, y = total, fill = promo_type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("lightblue", "orange")) +
+  geom_text(aes(label = round(total,2)), position = position_dodge(width = 0.9), vjust = -0.3, color = "black")
+```
+
+```{r, fig.width=13, fig.height=12}
+ggplot(data = summary_data, aes(x = total, y = department, color = promo_type)) +
+  geom_point(alpha = 0.6, size = 5) + 
+  scale_x_log10() +
+  labs(title = "Sales Comparison Between Display and Mailer Promotions",
+       x = "Department",
+       y = "Total Sales",
+       color = "Exhibit Types") +
+  theme_minimal()
+```
 
 
 
