@@ -9,7 +9,13 @@ output:
 ---
 # Report {.tabset}
 
-## Introduction 
+## Introduction
+
+The business problem we're addressing focuses on how different types of coupon campaigns affect sales across various product departments and display locations at Regork. Understanding which coupon types lead to higher sales is crucial for optimizing promotions, improving customer engagement, and boosting revenue.
+
+We utilized sales transaction data, focusing on coupon types and their redemption rates, campaign display locations, and total sales across different departments. The methodology included analyzing sales distributions across these variables to identify patterns in consumer purchases.
+
+This analysis offers actionable insights, such as which coupon types drive the most sales and which display locations are most effective. This can help Regork stakeholders make data-driven decisions on future promotions, improve resource allocation, and enhance overall sales strategies, especially by focusing on high-performing areas like grocery or drugstore departments.
 
 ## Packages Required
 ```{r}
@@ -180,6 +186,13 @@ trans_w_mailer0 <- transWithRedemptions_mailerLocationIs0
 ## Exploratory Data Analysis {.tabset}
 ### Coupon Types Effect on Sales
 - Assuming 'campaign_type' contains different coupon types
+
+We first tried to understand the performances of each campaign type on its redemption counts and total sales value. We achieved this by first joining the coupons related datasets to get every information of coupons. Then, we joined it with the transactions dataset to filter those having coupons redeemed, named full_transactions.
+
+We proceeded to group this by campaign_type in a bid to outline the trend of the totals sales value and redemption counts. This thus highlights Campaign Type A coming far ahead of others campaigns in both redemption count and total sales value. This implies how strong Campaign Type A was in triggering engagement from customers with the products having coupons.
+
+With this in mind, further exposition is called for with regard to the inner mechanics of Campaign Type A. Which products it works best for, the structure of the campaign in and of itself, or what elements make it successful could all help inform actionable insights into how to better construct future campaigns. That could be more attractive discounts, better product placement, or even broader appeal across segments, all of which should be factored in for further analysis.
+
 ```{r, fig.width=13, fig.height=12}
 summary_transactions <- full_transactions %>%
   group_by(campaign_type) %>%
@@ -226,7 +239,7 @@ sample <- full_transactions %>%
   group_by(campaign_type, department) %>%
   summarise(total_new = sum(total), .groups="drop")
   
-ggplot(data = sample, aes(x = campaign_type, y = department, fill = total_new)) +
+graph1 <- ggplot(data = sample, aes(x = campaign_type, y = department, fill = total_new)) +
   geom_tile() +
   scale_fill_gradient2(low="white", mid="lightblue", high="blue", name = "Sales Value") +
   geom_text(aes(label=round(total_new, 2)), color="black", size=4) +
@@ -394,6 +407,7 @@ ggplot(data = sample, aes(x = mailer_location, y = total, fill = department)) +
        x = "Mailer Locations",
        y = "Total Sale",
        fill = "Departments")
+
 ```
 Thoughts:
 
@@ -513,7 +527,7 @@ ggplot(data = summary_data, aes(x = total, y = department, color = promo_type)) 
        x = "Department",
        y = "Total Sales",
        color = "Exhibit Types") +
-  theme_minimal()
+  theme_classic()
 ```
 
 
