@@ -1,0 +1,283 @@
+---
+title: "The Modeling Process"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+# Set global knitr chunk options
+knitr::opts_chunk$set(
+  fig.align = "center",
+  error = FALSE,
+  message = FALSE, 
+  warning = FALSE, 
+  collapse = TRUE 
+)
+```
+
+-   the machine learning process is very iterative and heurstic-based
+
+-   common for many ML approaches to be applied, evaluated, and modified before a final, optimal model can be determined
+
+-   A proper process needs to be implemented to have confidence in our results
+
+## Components of the process
+
+Concepts that are useful for any type of machine learning model:
+
+-   data splitting
+-   fitting models
+-   resampling
+-   bias-variance trade-off
+-   making predictions
+-   model evaluation
+
+## Prerequisites
+
+Packages
+
+```{r prereq-pkg}
+library(tidyverse)
+library(tidymodels)
+```
+
+Data
+
+Assuming you've downloaded the class data and you have it in a subdirectory titled "data".
+
+```{r prereq-data}
+library(here)
+data_path <- here('Module 8/ML-data-1')
+
+# ames data
+ames <- read_csv(here(data_path, "ames.csv"))
+
+# attrition data
+attrition <- read_csv(here(data_path, "attrition.csv")) %>%
+  mutate(Attrition = factor(Attrition))
+```
+
+## Regression problem
+
+```{r}
+ames %>%
+  select(Sale_Price, everything())
+```
+
+## Classification problem
+
+```{r}
+attrition %>%
+  select(Attrition, everything())
+```
+
+## Data Splitting
+
+**Generalizability**: we want an algorithm that not only fits well to our past data, but more importantly, one that predicts a future outcome accurately.
+
+-   Training Set: these data are used to develop feature sets, train our algorithms, tune hyper-parameters, compare across models, and all of the other activities required to reach a final model decision.
+
+-   Test Set: having chosen a final model, these data are used to estimate an unbiased assessment of the model’s performance (generalization error).
+
+## Mechanics of data splitting
+
+```{r split-ames}
+set.seed(123)
+ames_split <- initial_split(ames, prop = 0.7, strata = Sale_Price)
+ames_train <- training(ames_split)
+ames_test  <- testing(ames_split)
+```
+
+```{r split-attrit}
+set.seed(123)
+churn_split <- initial_split(attrition, prop = 0.7, strata = Attrition)
+churn_train <- training(churn_split)
+churn_test  <- testing(churn_split)
+```
+
+## Validating split distribution
+
+We should always validate that our train and test splits have similar distributions:
+
+```{r, fig.height=3}
+# Do the distributions line up? 
+ggplot(ames_train, aes(x = Sale_Price)) + 
+  geom_line(stat = "density", 
+            trim = TRUE) + 
+  geom_line(data = ames_test, 
+            stat = "density", 
+            trim = TRUE, col = "red")
+```
+
+```{r}
+# consistent response ratio between train & test
+table(churn_train$Attrition) %>% prop.table()
+
+table(churn_test$Attrition) %>% prop.table()
+```
+
+## Building models
+
+We can use the Tidymodels approach, which is a meta engine (aggregator) that allows you to apply almost any direct engine
+
+```{r}
+# Tidymodels meta engine
+lm_tidy <- linear_reg() %>%
+  fit(Sale_Price ~ Gr_Liv_Area + Year_Built, data = ames_train)
+```
+
+### 3 Steps:
+
+1.  Create a model object
+
+2.  Choose an "engine"
+
+3.  Fit the model
+
+### Step 1: create a model object
+
+```{r}
+my_model <- linear_reg() 
+```
+
+-   `linear_reg()`: Linear regression
+
+-   `logistic_reg()`: Logistic regression
+
+-   `decision_tree()`: Decision tree
+
+-   `rand_forest()`: Random forest
+
+-   `nearest_neighbor()`: K-nearest neighbor
+
+-   `naive_Bayes()`: Naive Bayes
+
+-   and [many more](https://parsnip.tidymodels.org/reference/index.html#models)!
+
+### Step 2: choose an engine
+
+```{r}
+lm_model <- linear_reg() %>%
+  set_engine('lm') 
+
+glm_model <- linear_reg() %>%
+  set_engine('glm') 
+
+keras_model <- linear_reg() %>%
+  set_engine('keras') 
+```
+
+-   The "engine" is just the underlying package we want to use to train our model.
+
+-   Every model object has a default engine (i.e. `linear_reg()` defaults to use **lm**).
+
+-   But we can change the engine used if desired.
+
+### Step 3: Fit the model
+
+For our regression model...
+
+```{r}
+lm_model <- linear_reg() %>%
+  set_engine('lm') %>%
+  fit(Sale_Price ~ Gr_Liv_Area + Year_Built, data = ames_train) 
+```
+
+And for our classification model...
+
+```{r}
+classifier_model <- logistic_reg() %>%
+  fit(Attrition ~ ., data = churn_train) 
+```
+
+## Making predictions
+
+So we call this ***training*** or ***fitting*** our model:
+
+```{r}
+lm_model <- linear_reg() %>%
+  set_engine('lm') %>%
+  fit(Sale_Price ~ Gr_Liv_Area + Year_Built, data = ames_train)
+```
+
+Once we have a model, we can use it to make predictions whether that be on...
+
+the current training data:
+
+```{r}
+lm_model %>% predict(ames_train)
+```
+
+Or on new, unseen data:
+
+```{r}
+lm_model %>% predict(ames_test)
+```
+
+## Model evaluation
+
+**Regression**
+
+-   Mean Square Error (MSE)
+-   Root Mean Square Error (RMSE)
+-   Mean Absolute Error (MAE)
+-   Mean Absolute Percent Error (MAPE)
+-   Root Mean Squared Logarithmic Error (RMSLE)
+
+```{r}
+lm_model %>%
+  predict(ames_test) %>%
+  bind_cols(ames_test %>% select(Sale_Price)) %>%
+  rmse(truth = Sale_Price, estimate = .pred)
+```
+
+**Classification**
+
+-   Classification Accuracy
+-   Recall vs. Specificity
+-   $F_1$ Score
+-   Log Loss
+
+```{r}
+classifier_model %>%
+  predict(churn_test) %>%
+  bind_cols(churn_test %>% select(Attrition)) %>%
+  accuracy(truth = Attrition, estimate = .pred_class)
+```
+
+```{r}
+classifier_model %>%
+  predict(churn_test) %>%
+  bind_cols(churn_test %>% select(Attrition)) %>%
+  conf_mat(truth = Attrition, estimate = .pred_class)
+```
+
+## Summary
+
+1.  Split data
+2.  Train model
+3.  Make predictions
+4.  Use predictions to evaluate performance
+
+```{r}
+# split data
+set.seed(123)
+ames_split <- initial_split(ames, prop = 0.7, strata = Sale_Price)
+ames_train <- training(ames_split)
+ames_test  <- testing(ames_split)
+
+# train model
+lm_model <- linear_reg() %>%
+  set_engine('lm') %>%
+  fit(Sale_Price ~ Gr_Liv_Area + Year_Built, data = ames_train)
+
+# make predictions
+predictions <- lm_model %>% 
+  predict(ames_test)
+
+# evaluate model performance
+predictions %>% 
+  bind_cols(ames_test %>% select(Sale_Price)) %>%
+  rmse(truth = Sale_Price, estimate = .pred)
+```
