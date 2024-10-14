@@ -215,25 +215,26 @@ ggplot(data = summary_transactions, aes(x = campaign_type)) +
   geom_point(aes(y = total_sales, color = 'Total Sales'), size = 3.0) + 
   scale_y_continuous(
     name = "Count of campaign type",
-    breaks = seq(0, max(summary_transactions$total_sales) + 1, by = 400),
+    breaks = seq(0, max(summary_transactions$count_type) + 1, by = 400),
     sec.axis = sec_axis(~., 
                         name = "Total Sales",
                         breaks = seq(0, max(summary_transactions$total_sales) + 1, by = 400),
                         labels = scales::dollar)
   ) +
   labs(x = 'Campaign Types', title = "Total Sales Value and Count of Redemptions Per Campaign Type") + 
-  scale_fill_manual(name = '', values = c("Count of campaign type" = "lightblue")) +
-  scale_color_manual(name = '', values = c("Total Sales Value" = 'red')) + 
+  scale_fill_manual(name = '', values = c("Count of campaign type" = "lightblue")) + 
+  scale_color_manual(name = '', values = c("Total Sales" = 'red')) + 
   theme_classic() + 
-  theme(plot.title = element_text(size = 20),
-        axis.title.x = element_text(margin = margin(t = 10), size = 14),
-        axis.title.y.left = element_text(margin = margin(r = 10), size = 14),
-        axis.title.y.right = element_text(margin = margin(l = 10), size = 14),
-        legend.position = 'bottom',
-        legend.title = element_text(size = 14),
-        legend.text = element_text(size = 14)
-        ) +
-  annotate("text", x = "Type A", y = 7603, label = "Exceptionally High", color = "blue", size = 6, vjust = -1)
+  theme(
+    plot.title = element_text(size = 20),
+    axis.title.x = element_text(margin = margin(t = 10), size = 14),
+    axis.title.y.left = element_text(margin = margin(r = 10), size = 14),
+    axis.title.y.right = element_text(margin = margin(l = 10), size = 14),
+    legend.position = 'bottom',
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 14)
+  ) +
+  annotate("text", x = 1, y = 7603, label = "Exceptionally High", color = "blue", size = 6, vjust = -1)
 ```
 
 This analysis revealed that Campaign Type A significantly outperformed other campaigns in both metrics, indicating its effectiveness in driving customer engagement with coupon-related products.
@@ -391,7 +392,7 @@ ggplot(data = combined, aes(x = department, y = total, fill = type)) +
   geom_bar(stat = "identity", position = "dodge") +
   scale_y_continuous(breaks = seq(0, max(combined$total) + 1, by = 500),
                      labels = label_dollar()) +
-  geom_text(aes(label = round(total, 2)), 
+  geom_text(aes(label = scales::label_dollar()(total)), 
             position = position_dodge(width = 0.9), 
             vjust = -1, 
             color = "black") +
